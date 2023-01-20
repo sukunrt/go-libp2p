@@ -560,7 +560,7 @@ func (ids *idService) getSignedRecord(snapshot *identifySnapshot) []byte {
 }
 
 // diff takes two slices of strings (a and b) and computes which elements were added and removed in b
-func diff(a, b []string) (added, removed []string) {
+func diff(a, b []protocol.ID) (added, removed []protocol.ID) {
 	// This is O(n^2), but it's fine because the slices are small.
 	for _, x := range b {
 		var found bool
@@ -592,15 +592,15 @@ func diff(a, b []string) (added, removed []string) {
 func (ids *idService) consumeMessage(mes *pb.Identify, c network.Conn, isPush bool) {
 	p := c.RemotePeer()
 
-	// TODO (sukunrt): Fix this
 	supported, _ := ids.Host.Peerstore().GetProtocols(p)
-	added, removed := diff(protocol.ConvertToStrings(supported), mes.Protocols)
-	ids.Host.Peerstore().SetProtocols(p, protocol.ConvertFromStrings(mes.Protocols)...)
+	mesProtocols := protocol.ConvertFromStrings(mes.Protocols)
+	added, removed := diff(supported, mesProtocols)
+	ids.Host.Peerstore().SetProtocols(p, mesProtocols...)
 	if isPush {
 		ids.emitters.evtPeerProtocolsUpdated.Emit(event.EvtPeerProtocolsUpdated{
 			Peer:    p,
-			Added:   protocol.ConvertFromStrings(added),
-			Removed: protocol.ConvertFromStrings(removed),
+			Added:   added,
+			Removed: removed,
 		})
 	}
 
