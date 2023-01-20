@@ -592,9 +592,10 @@ func diff(a, b []string) (added, removed []string) {
 func (ids *idService) consumeMessage(mes *pb.Identify, c network.Conn, isPush bool) {
 	p := c.RemotePeer()
 
+	// TODO (sukunrt): Fix this
 	supported, _ := ids.Host.Peerstore().GetProtocols(p)
-	added, removed := diff(supported, mes.Protocols)
-	ids.Host.Peerstore().SetProtocols(p, mes.Protocols...)
+	added, removed := diff(protocol.ConvertToStrings(supported), mes.Protocols)
+	ids.Host.Peerstore().SetProtocols(p, protocol.ConvertFromStrings(mes.Protocols)...)
 	if isPush {
 		ids.emitters.evtPeerProtocolsUpdated.Emit(event.EvtPeerProtocolsUpdated{
 			Peer:    p,

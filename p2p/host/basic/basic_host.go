@@ -637,9 +637,7 @@ func (h *BasicHost) NewStream(ctx context.Context, p peer.ID, pids ...protocol.I
 		return nil, ctx.Err()
 	}
 
-	pidStrings := protocol.ConvertToStrings(pids)
-
-	pref, err := h.preferredProtocol(p, pidStrings)
+	pref, err := h.preferredProtocol(p, pids)
 	if err != nil {
 		_ = s.Reset()
 		return nil, err
@@ -653,6 +651,8 @@ func (h *BasicHost) NewStream(ctx context.Context, p peer.ID, pids ...protocol.I
 			rw:     lzcon,
 		}, nil
 	}
+
+	pidStrings := protocol.ConvertToStrings(pids)
 
 	// Negotiate the protocol in the background, obeying the context.
 	var selected string
@@ -676,11 +676,11 @@ func (h *BasicHost) NewStream(ctx context.Context, p peer.ID, pids ...protocol.I
 
 	selpid := protocol.ID(selected)
 	s.SetProtocol(selpid)
-	h.Peerstore().AddProtocols(p, selected)
+	h.Peerstore().AddProtocols(p, selpid)
 	return s, nil
 }
 
-func (h *BasicHost) preferredProtocol(p peer.ID, pids []string) (protocol.ID, error) {
+func (h *BasicHost) preferredProtocol(p peer.ID, pids []protocol.ID) (protocol.ID, error) {
 	supported, err := h.Peerstore().SupportsProtocols(p, pids...)
 	if err != nil {
 		return "", err

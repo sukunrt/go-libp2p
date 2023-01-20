@@ -587,14 +587,14 @@ func TestSendPush(t *testing.T) {
 	// h1 starts listening on a new protocol and h2 finds out about that through a push
 	h1.SetStreamHandler("rand", func(network.Stream) {})
 	require.Eventually(t, func() bool {
-		sup, err := h2.Peerstore().SupportsProtocols(h1.ID(), []string{"rand"}...)
+		sup, err := h2.Peerstore().SupportsProtocols(h1.ID(), []protocol.ID{"rand"}...)
 		return err == nil && len(sup) == 1 && sup[0] == "rand"
 	}, time.Second, 10*time.Millisecond)
 
 	// h1 stops listening on a protocol and h2 finds out about it via a push
 	h1.RemoveStreamHandler("rand")
 	require.Eventually(t, func() bool {
-		sup, err := h2.Peerstore().SupportsProtocols(h1.ID(), []string{"rand"}...)
+		sup, err := h2.Peerstore().SupportsProtocols(h1.ID(), []protocol.ID{"rand"}...)
 		return err == nil && len(sup) == 0
 	}, time.Second, 10*time.Millisecond)
 }

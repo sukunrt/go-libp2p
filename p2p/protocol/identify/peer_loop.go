@@ -116,7 +116,7 @@ func (ph *peerHandler) openStream(ctx context.Context, proto string) (network.St
 		}
 	}
 
-	if sup, err := ph.ids.Host.Peerstore().SupportsProtocols(ph.pid, proto); err != nil || len(sup) == 0 {
+	if sup, err := ph.ids.Host.Peerstore().SupportsProtocols(ph.pid, protocol.ID(proto)); err != nil || len(sup) == 0 {
 		return nil, errProtocolNotSupported
 	}
 	ph.ids.pushSemaphore <- struct{}{}

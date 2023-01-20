@@ -171,7 +171,7 @@ func (bh *BlankHost) NewStream(ctx context.Context, p peer.ID, protos ...protoco
 
 	selpid := protocol.ID(selected)
 	s.SetProtocol(selpid)
-	bh.Peerstore().AddProtocols(p, selected)
+	bh.Peerstore().AddProtocols(p, selpid)
 
 	return s, nil
 }

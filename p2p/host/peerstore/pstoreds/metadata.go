@@ -8,6 +8,7 @@ import (
 	pool "github.com/libp2p/go-buffer-pool"
 	"github.com/libp2p/go-libp2p/core/peer"
 	pstore "github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/protocol"
 
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
@@ -28,7 +29,7 @@ func init() {
 	// Gob registers basic types by default.
 	//
 	// Register complex types used by the peerstore itself.
-	gob.Register(make(map[string]struct{}))
+	gob.Register(make(map[protocol.ID]struct{}))
 }
 
 // NewPeerMetadata creates a metadata store backed by a persistent db. It uses gob for serialisation.

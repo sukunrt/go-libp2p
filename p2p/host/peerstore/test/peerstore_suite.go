@@ -12,6 +12,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	pstore "github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/protocol"
 
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
@@ -42,6 +43,10 @@ func TestPeerstore(t *testing.T, factory PeerstoreFactory) {
 			closeFunc()
 		}
 	}
+}
+
+func sortProtos(protos []protocol.ID) {
+	sort.Slice(protos, func(i, j int) bool { return protos[i] < protos[j] })
 }
 
 func testAddrStream(ps pstore.Peerstore) func(t *testing.T) {
@@ -209,14 +214,14 @@ func testPeerstoreProtoStore(ps pstore.Peerstore) func(t *testing.T) {
 	return func(t *testing.T) {
 		t.Run("adding and removing protocols", func(t *testing.T) {
 			p1 := peer.ID("TESTPEER")
-			protos := []string{"a", "b", "c", "d"}
+			protos := []protocol.ID{"a", "b", "c", "d"}
 
 			require.NoError(t, ps.AddProtocols(p1, protos...))
 			out, err := ps.GetProtocols(p1)
 			require.NoError(t, err)
 			require.Len(t, out, len(protos), "got wrong number of protocols back")
 
-			sort.Strings(out)
+			sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 			for i, p := range protos {
 				if out[i] != p {
 					t.Fatal("got wrong protocol")
@@ -233,7 +238,7 @@ func testPeerstoreProtoStore(ps pstore.Peerstore) func(t *testing.T) {
 
 			b, err := ps.FirstSupportedProtocol(p1, "q", "w", "a", "y", "b")
 			require.NoError(t, err)
-			require.Equal(t, "a", b)
+			require.Equal(t, protocol.ID("a"), b)
 
 			b, err = ps.FirstSupportedProtocol(p1, "q", "x", "z")
 			require.NoError(t, err)
@@ -241,9 +246,9 @@ func testPeerstoreProtoStore(ps pstore.Peerstore) func(t *testing.T) {
 
 			b, err = ps.FirstSupportedProtocol(p1, "a")
 			require.NoError(t, err)
-			require.Equal(t, "a", b)
+			require.Equal(t, protocol.ID("a"), b)
 
-			protos = []string{"other", "yet another", "one more"}
+			protos = []protocol.ID{"other", "yet another", "one more"}
 			require.NoError(t, ps.SetProtocols(p1, protos...))
 
 			supported, err = ps.SupportsProtocols(p1, "q", "w", "a", "y", "b")
@@ -253,8 +258,8 @@ func testPeerstoreProtoStore(ps pstore.Peerstore) func(t *testing.T) {
 			supported, err = ps.GetProtocols(p1)
 			require.NoError(t, err)
 
-			sort.Strings(supported)
-			sort.Strings(protos)
+			sortProtos(supported)
+			sortProtos(protos)
 			if !reflect.DeepEqual(supported, protos) {
 				t.Fatalf("expected previously set protos; expected: %v, have: %v", protos, supported)
 			}
@@ -270,7 +275,7 @@ func testPeerstoreProtoStore(ps pstore.Peerstore) func(t *testing.T) {
 
 		t.Run("removing peer", func(t *testing.T) {
 			p := peer.ID("foobar")
-			protos := []string{"a", "b"}
+			protos := []protocol.ID{"a", "b"}
 
 			require.NoError(t, ps.SetProtocols(p, protos...))
 			out, err := ps.GetProtocols(p)
@@ -383,9 +388,9 @@ func getAddrs(t *testing.T, n int) []ma.Multiaddr {
 
 func TestPeerstoreProtoStoreLimits(t *testing.T, ps pstore.Peerstore, limit int) {
 	p := peer.ID("foobar")
-	protocols := make([]string, limit)
+	protocols := make([]protocol.ID, limit)
 	for i := 0; i < limit; i++ {
-		protocols[i] = fmt.Sprintf("protocol %d", i)
+		protocols[i] = protocol.ID(fmt.Sprintf("protocol %d", i))
 	}
 
 	t.Run("setting protocols", func(t *testing.T) {

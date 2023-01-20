@@ -12,6 +12,7 @@ import (
 	gomock "github.com/golang/mock/gomock"
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
 	peer "github.com/libp2p/go-libp2p/core/peer"
+	protocol "github.com/libp2p/go-libp2p/core/protocol"
 	multiaddr "github.com/multiformats/go-multiaddr"
 )
 
@@ -77,7 +78,7 @@ func (mr *MockPeerstoreMockRecorder) AddPrivKey(arg0, arg1 interface{}) *gomock.
 }
 
 // AddProtocols mocks base method.
-func (m *MockPeerstore) AddProtocols(arg0 peer.ID, arg1 ...string) error {
+func (m *MockPeerstore) AddProtocols(arg0 peer.ID, arg1 ...protocol.ID) error {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0}
 	for _, a := range arg1 {
@@ -164,14 +165,14 @@ func (mr *MockPeerstoreMockRecorder) Close() *gomock.Call {
 }
 
 // FirstSupportedProtocol mocks base method.
-func (m *MockPeerstore) FirstSupportedProtocol(arg0 peer.ID, arg1 ...string) (string, error) {
+func (m *MockPeerstore) FirstSupportedProtocol(arg0 peer.ID, arg1 ...protocol.ID) (protocol.ID, error) {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0}
 	for _, a := range arg1 {
 		varargs = append(varargs, a)
 	}
 	ret := m.ctrl.Call(m, "FirstSupportedProtocol", varargs...)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(protocol.ID)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -199,10 +200,10 @@ func (mr *MockPeerstoreMockRecorder) Get(arg0, arg1 interface{}) *gomock.Call {
 }
 
 // GetProtocols mocks base method.
-func (m *MockPeerstore) GetProtocols(arg0 peer.ID) ([]string, error) {
+func (m *MockPeerstore) GetProtocols(arg0 peer.ID) ([]protocol.ID, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetProtocols", arg0)
-	ret0, _ := ret[0].([]string)
+	ret0, _ := ret[0].([]protocol.ID)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -350,7 +351,7 @@ func (mr *MockPeerstoreMockRecorder) RemovePeer(arg0 interface{}) *gomock.Call {
 }
 
 // RemoveProtocols mocks base method.
-func (m *MockPeerstore) RemoveProtocols(arg0 peer.ID, arg1 ...string) error {
+func (m *MockPeerstore) RemoveProtocols(arg0 peer.ID, arg1 ...protocol.ID) error {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0}
 	for _, a := range arg1 {
@@ -393,7 +394,7 @@ func (mr *MockPeerstoreMockRecorder) SetAddrs(arg0, arg1, arg2 interface{}) *gom
 }
 
 // SetProtocols mocks base method.
-func (m *MockPeerstore) SetProtocols(arg0 peer.ID, arg1 ...string) error {
+func (m *MockPeerstore) SetProtocols(arg0 peer.ID, arg1 ...protocol.ID) error {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0}
 	for _, a := range arg1 {
@@ -412,14 +413,14 @@ func (mr *MockPeerstoreMockRecorder) SetProtocols(arg0 interface{}, arg1 ...inte
 }
 
 // SupportsProtocols mocks base method.
-func (m *MockPeerstore) SupportsProtocols(arg0 peer.ID, arg1 ...string) ([]string, error) {
+func (m *MockPeerstore) SupportsProtocols(arg0 peer.ID, arg1 ...protocol.ID) ([]protocol.ID, error) {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0}
 	for _, a := range arg1 {
 		varargs = append(varargs, a)
 	}
 	ret := m.ctrl.Call(m, "SupportsProtocols", varargs...)
-	ret0, _ := ret[0].([]string)
+	ret0, _ := ret[0].([]protocol.ID)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
