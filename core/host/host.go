@@ -52,7 +52,7 @@ type Host interface {
 
 	// SetStreamHandlerMatch sets the protocol handler on the Host's Mux
 	// using a matching function for protocol selection.
-	SetStreamHandlerMatch(protocol.ID, func(string) bool, network.StreamHandler)
+	SetStreamHandlerMatch(protocol.ID, func(protocol.ID) bool, network.StreamHandler)
 
 	// RemoveStreamHandler removes a handler on the mux that was set by
 	// SetStreamHandler

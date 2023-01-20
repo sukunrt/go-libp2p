@@ -383,7 +383,7 @@ func TestIdentifyPushWhileIdentifyingConn(t *testing.T) {
 	handler := func(s network.Stream) {
 		<-block
 		w := pbio.NewDelimitedWriter(s)
-		w.WriteMsg(&pb.Identify{Protocols: h1.Mux().Protocols()})
+		w.WriteMsg(&pb.Identify{Protocols:protocol.ConvertToStrings(h1.Mux().Protocols())})
 		s.Close()
 	}
 	h1.RemoveStreamHandler(identify.ID)

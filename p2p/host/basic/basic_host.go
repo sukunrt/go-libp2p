@@ -70,7 +70,7 @@ type BasicHost struct {
 
 	network      network.Network
 	psManager    *pstoremanager.PeerstoreManager
-	mux          *msmux.MultistreamMuxer
+	mux          *msmux.MultistreamMuxer[protocol.ID]
 	ids          identify.IDService
 	hps          *holepunch.Service
 	pings        *ping.PingService
@@ -108,7 +108,7 @@ var _ host.Host = (*BasicHost)(nil)
 // customize construction of the *BasicHost.
 type HostOpts struct {
 	// MultistreamMuxer is essential for the *BasicHost and will use a sensible default value if omitted.
-	MultistreamMuxer *msmux.MultistreamMuxer
+	MultistreamMuxer *msmux.MultistreamMuxer[protocol.ID]
 
 	// NegotiationTimeout determines the read and write timeouts on streams.
 	// If 0 or omitted, it will use DefaultNegotiationTimeout.
@@ -168,7 +168,7 @@ func NewHost(n network.Network, opts *HostOpts) (*BasicHost, error) {
 	h := &BasicHost{
 		network:                 n,
 		psManager:               psManager,
-		mux:                     msmux.NewMultistreamMuxer(),
+		mux:                     msmux.NewMultistreamMuxer[protocol.ID](),
 		negtimeout:              DefaultNegotiationTimeout,
 		AddrsFactory:            DefaultAddrsFactory,
 		maResolver:              madns.DefaultResolver,
@@ -407,7 +407,7 @@ func (h *BasicHost) newStreamHandler(s network.Stream) {
 		}
 	}
 
-	if err := s.SetProtocol(protocol.ID(protoID)); err != nil {
+	if err := s.SetProtocol(protoID); err != nil {
 		log.Debugf("error setting stream protocol: %s", err)
 		s.Reset()
 		return
@@ -571,9 +571,9 @@ func (h *BasicHost) EventBus() event.Bus {
 //
 // (Threadsafe)
 func (h *BasicHost) SetStreamHandler(pid protocol.ID, handler network.StreamHandler) {
-	h.Mux().AddHandler(string(pid), func(p string, rwc io.ReadWriteCloser) error {
+	h.Mux().AddHandler(pid, func(p protocol.ID, rwc io.ReadWriteCloser) error {
 		is := rwc.(network.Stream)
-		is.SetProtocol(protocol.ID(p))
+		is.SetProtocol(p)
 		handler(is)
 		return nil
 	})
@@ -584,10 +584,10 @@ func (h *BasicHost) SetStreamHandler(pid protocol.ID, handler network.StreamHand
 
 // SetStreamHandlerMatch sets the protocol handler on the Host's Mux
 // using a matching function to do protocol comparisons
-func (h *BasicHost) SetStreamHandlerMatch(pid protocol.ID, m func(string) bool, handler network.StreamHandler) {
-	h.Mux().AddHandlerWithFunc(string(pid), m, func(p string, rwc io.ReadWriteCloser) error {
+func (h *BasicHost) SetStreamHandlerMatch(pid protocol.ID, m func(protocol.ID) bool, handler network.StreamHandler) {
+	h.Mux().AddHandlerWithFunc(pid, m, func(p protocol.ID, rwc io.ReadWriteCloser) error {
 		is := rwc.(network.Stream)
-		is.SetProtocol(protocol.ID(p))
+		is.SetProtocol(p)
 		handler(is)
 		return nil
 	})
@@ -598,7 +598,7 @@ func (h *BasicHost) SetStreamHandlerMatch(pid protocol.ID, m func(string) bool, 
 
 // RemoveStreamHandler returns ..
 func (h *BasicHost) RemoveStreamHandler(pid protocol.ID) {
-	h.Mux().RemoveHandler(string(pid))
+	h.Mux().RemoveHandler(pid)
 	h.emitters.evtLocalProtocolsUpdated.Emit(event.EvtLocalProtocolsUpdated{
 		Removed: []protocol.ID{pid},
 	})
@@ -645,20 +645,18 @@ func (h *BasicHost) NewStream(ctx context.Context, p peer.ID, pids ...protocol.I
 
 	if pref != "" {
 		s.SetProtocol(pref)
-		lzcon := msmux.NewMSSelect(s, string(pref))
+		lzcon := msmux.NewMSSelect(s, pref)
 		return &streamWrapper{
 			Stream: s,
 			rw:     lzcon,
 		}, nil
 	}
 
-	pidStrings := protocol.ConvertToStrings(pids)
-
 	// Negotiate the protocol in the background, obeying the context.
-	var selected string
+	var selected protocol.ID
 	errCh := make(chan error, 1)
 	go func() {
-		selected, err = msmux.SelectOneOf(pidStrings, s)
+		selected, err = msmux.SelectOneOf(pids, s)
 		errCh <- err
 	}()
 	select {
@@ -674,9 +672,8 @@ func (h *BasicHost) NewStream(ctx context.Context, p peer.ID, pids ...protocol.I
 		return nil, ctx.Err()
 	}
 
-	selpid := protocol.ID(selected)
-	s.SetProtocol(selpid)
-	h.Peerstore().AddProtocols(p, selpid)
+	s.SetProtocol(selected)
+	h.Peerstore().AddProtocols(p, selected)
 	return s, nil
 }
 
@@ -688,7 +685,7 @@ func (h *BasicHost) preferredProtocol(p peer.ID, pids []protocol.ID) (protocol.I
 
 	var out protocol.ID
 	if len(supported) > 0 {
-		out = protocol.ID(supported[0])
+		out = supported[0]
 	}
 	return out, nil
 }

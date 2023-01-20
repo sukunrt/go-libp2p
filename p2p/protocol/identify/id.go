@@ -500,7 +500,7 @@ func (ids *idService) createBaseIdentifyResponse(
 	localAddr := conn.LocalMultiaddr()
 
 	// set protocols this node is currently handling
-	mes.Protocols = snapshot.protocols
+	mes.Protocols = protocol.ConvertToStrings(snapshot.protocols)
 
 	// observed address so other side is informed of their
 	// "public" address, at least in relation to us.

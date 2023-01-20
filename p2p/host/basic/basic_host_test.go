@@ -299,7 +299,7 @@ func TestHostProtoPreference(t *testing.T) {
 	assertWait(t, connectedOn, protoOld)
 	s.Close()
 
-	h2.SetStreamHandlerMatch(protoMinor, func(string) bool { return true }, handler)
+	h2.SetStreamHandlerMatch(protoMinor, func(protocol.ID) bool { return true }, handler)
 	// remembered preference will be chosen first, even when the other side newly supports it
 	s2, err := h1.NewStream(context.Background(), h2.ID(), protoMinor, protoNew, protoOld)
 	require.NoError(t, err)

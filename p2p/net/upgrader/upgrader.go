@@ -53,13 +53,13 @@ type upgrader struct {
 	connGater connmgr.ConnectionGater
 	rcmgr     network.ResourceManager
 
-	muxerMuxer *mss.MultistreamMuxer
+	muxerMuxer *mss.MultistreamMuxer[protocol.ID]
 	muxers     []StreamMuxer
-	muxerIDs   []string
+	muxerIDs   []protocol.ID
 
 	security      []sec.SecureTransport
-	securityMuxer *mss.MultistreamMuxer
-	securityIDs   []string
+	securityMuxer *mss.MultistreamMuxer[protocol.ID]
+	securityIDs   []protocol.ID
 
 	// AcceptTimeout is the maximum duration an Accept is allowed to take.
 	// This includes the time between accepting the raw network connection,
@@ -77,10 +77,10 @@ func New(security []sec.SecureTransport, muxers []StreamMuxer, psk ipnet.PSK, rc
 		rcmgr:         rcmgr,
 		connGater:     connGater,
 		psk:           psk,
-		muxerMuxer:    mss.NewMultistreamMuxer(),
+		muxerMuxer:    mss.NewMultistreamMuxer[protocol.ID](),
 		muxers:        muxers,
 		security:      security,
-		securityMuxer: mss.NewMultistreamMuxer(),
+		securityMuxer: mss.NewMultistreamMuxer[protocol.ID](),
 	}
 	for _, opt := range opts {
 		if err := opt(u); err != nil {
@@ -90,15 +90,15 @@ func New(security []sec.SecureTransport, muxers []StreamMuxer, psk ipnet.PSK, rc
 	if u.rcmgr == nil {
 		u.rcmgr = &network.NullResourceManager{}
 	}
-	u.muxerIDs = make([]string, 0, len(muxers))
+	u.muxerIDs = make([]protocol.ID, 0, len(muxers))
 	for _, m := range muxers {
-		u.muxerMuxer.AddHandler(string(m.ID), nil)
-		u.muxerIDs = append(u.muxerIDs, string(m.ID))
+		u.muxerMuxer.AddHandler(m.ID, nil)
+		u.muxerIDs = append(u.muxerIDs, m.ID)
 	}
-	u.securityIDs = make([]string, 0, len(security))
+	u.securityIDs = make([]protocol.ID, 0, len(security))
 	for _, s := range security {
-		u.securityMuxer.AddHandler(string(s.ID()), nil)
-		u.securityIDs = append(u.securityIDs, string(s.ID()))
+		u.securityMuxer.AddHandler(s.ID(), nil)
+		u.securityIDs = append(u.securityIDs, s.ID())
 	}
 	return u, nil
 }
@@ -219,7 +219,7 @@ func (u *upgrader) negotiateMuxer(nc net.Conn, isServer bool) (*StreamMuxer, err
 		return nil, err
 	}
 
-	var proto string
+	var proto protocol.ID
 	if isServer {
 		selected, _, err := u.muxerMuxer.Negotiate(nc)
 		if err != nil {
@@ -244,9 +244,9 @@ func (u *upgrader) negotiateMuxer(nc net.Conn, isServer bool) (*StreamMuxer, err
 	return nil, fmt.Errorf("selected protocol we don't have a transport for")
 }
 
-func (u *upgrader) getMuxerByID(id string) *StreamMuxer {
+func (u *upgrader) getMuxerByID(id protocol.ID) *StreamMuxer {
 	for _, m := range u.muxers {
-		if string(m.ID) == id {
+		if m.ID == id {
 			return &m
 		}
 	}
@@ -254,7 +254,7 @@ func (u *upgrader) getMuxerByID(id string) *StreamMuxer {
 }
 
 func (u *upgrader) setupMuxer(ctx context.Context, conn sec.SecureConn, server bool, scope network.PeerScope) (protocol.ID, network.MuxedConn, error) {
-	muxerSelected := conn.ConnState().StreamMultiplexer
+	muxerSelected := protocol.ID(conn.ConnState().StreamMultiplexer)
 	// Use muxer selected from security handshake if available. Otherwise fall back to multistream-selection.
 	if len(muxerSelected) > 0 {
 		m := u.getMuxerByID(muxerSelected)
@@ -265,7 +265,7 @@ func (u *upgrader) setupMuxer(ctx context.Context, conn sec.SecureConn, server b
 		if err != nil {
 			return "", nil, err
 		}
-		return protocol.ID(muxerSelected), c, nil
+		return muxerSelected, c, nil
 	}
 
 	type result struct {
@@ -298,9 +298,9 @@ func (u *upgrader) setupMuxer(ctx context.Context, conn sec.SecureConn, server b
 	}
 }
 
-func (u *upgrader) getSecurityByID(id string) sec.SecureTransport {
+func (u *upgrader) getSecurityByID(id protocol.ID) sec.SecureTransport {
 	for _, s := range u.security {
-		if string(s.ID()) == id {
+		if s.ID() == id {
 			return s
 		}
 	}
@@ -309,7 +309,7 @@ func (u *upgrader) getSecurityByID(id string) sec.SecureTransport {
 
 func (u *upgrader) negotiateSecurity(ctx context.Context, insecure net.Conn, server bool) (sec.SecureTransport, bool, error) {
 	type result struct {
-		proto     string
+		proto     protocol.ID
 		iamserver bool
 		err       error
 	}

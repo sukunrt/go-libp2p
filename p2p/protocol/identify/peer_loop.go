@@ -16,7 +16,7 @@ import (
 var errProtocolNotSupported = errors.New("protocol not supported")
 
 type identifySnapshot struct {
-	protocols []string
+	protocols []protocol.ID
 	addrs     []ma.Multiaddr
 	record    *record.Envelope
 }
@@ -103,7 +103,7 @@ func (ph *peerHandler) sendPush(ctx context.Context) error {
 	return nil
 }
 
-func (ph *peerHandler) openStream(ctx context.Context, proto string) (network.Stream, error) {
+func (ph *peerHandler) openStream(ctx context.Context, proto protocol.ID) (network.Stream, error) {
 	// wait for the other peer to send us an Identify response on "all" connections we have with it
 	// so we can look at it's supported protocols and avoid a multistream-select roundtrip to negotiate the protocol
 	// if we know for a fact that it doesn't support the protocol.
@@ -116,7 +116,7 @@ func (ph *peerHandler) openStream(ctx context.Context, proto string) (network.St
 		}
 	}
 
-	if sup, err := ph.ids.Host.Peerstore().SupportsProtocols(ph.pid, protocol.ID(proto)); err != nil || len(sup) == 0 {
+	if sup, err := ph.ids.Host.Peerstore().SupportsProtocols(ph.pid, proto); err != nil || len(sup) == 0 {
 		return nil, errProtocolNotSupported
 	}
 	ph.ids.pushSemaphore <- struct{}{}
