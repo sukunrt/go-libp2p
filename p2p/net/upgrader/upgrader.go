@@ -254,7 +254,7 @@ func (u *upgrader) getMuxerByID(id protocol.ID) *StreamMuxer {
 }
 
 func (u *upgrader) setupMuxer(ctx context.Context, conn sec.SecureConn, server bool, scope network.PeerScope) (protocol.ID, network.MuxedConn, error) {
-	muxerSelected := protocol.ID(conn.ConnState().StreamMultiplexer)
+	muxerSelected := conn.ConnState().StreamMultiplexer
 	// Use muxer selected from security handshake if available. Otherwise fall back to multistream-selection.
 	if len(muxerSelected) > 0 {
 		m := u.getMuxerByID(muxerSelected)

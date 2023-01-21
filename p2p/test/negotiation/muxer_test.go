@@ -119,7 +119,7 @@ func TestMuxerNegotiation(t *testing.T) {
 				require.NoError(t, err)
 				conns := client.Network().ConnsToPeer(server.ID())
 				require.Len(t, conns, 1, "expected exactly one connection")
-				require.Equal(t, tc.Expected, protocol.ID(conns[0].ConnState().StreamMultiplexer))
+				require.Equal(t, tc.Expected, conns[0].ConnState().StreamMultiplexer)
 			})
 		}
 	}

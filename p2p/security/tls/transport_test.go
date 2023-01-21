@@ -180,7 +180,7 @@ func TestHandshakeSucceeds(t *testing.T) {
 type testcase struct {
 	clientProtos   []protocol.ID
 	serverProtos   []protocol.ID
-	expectedResult string
+	expectedResult protocol.ID
 }
 
 func TestHandshakeWithNextProtoSucceeds(t *testing.T) {
@@ -188,44 +188,44 @@ func TestHandshakeWithNextProtoSucceeds(t *testing.T) {
 		{
 			clientProtos:   []protocol.ID{"muxer1", "muxer2"},
 			serverProtos:   []protocol.ID{"muxer2", "muxer1"},
-			expectedResult: "muxer1",
+			expectedResult: protocol.ID("muxer1"),
 		},
 		{
 			clientProtos:   []protocol.ID{"muxer1", "muxer2", "libp2p"},
 			serverProtos:   []protocol.ID{"muxer2", "muxer1", "libp2p"},
-			expectedResult: "muxer1",
+			expectedResult: protocol.ID("muxer1"),
 		},
 		{
 			clientProtos:   []protocol.ID{"muxer1", "libp2p"},
 			serverProtos:   []protocol.ID{"libp2p"},
-			expectedResult: "",
+			expectedResult: protocol.ID(""),
 		},
 		{
 			clientProtos:   []protocol.ID{"libp2p"},
 			serverProtos:   []protocol.ID{"libp2p"},
-			expectedResult: "",
+			expectedResult: protocol.ID(""),
 		},
 		{
 			clientProtos:   []protocol.ID{"muxer1"},
 			serverProtos:   []protocol.ID{},
-			expectedResult: "",
+			expectedResult: protocol.ID(""),
 		},
 		{
 			clientProtos:   []protocol.ID{},
 			serverProtos:   []protocol.ID{"muxer1"},
-			expectedResult: "",
+			expectedResult: protocol.ID(""),
 		},
 		{
 			clientProtos:   []protocol.ID{"muxer2"},
 			serverProtos:   []protocol.ID{"muxer1"},
-			expectedResult: "",
+			expectedResult: protocol.ID(""),
 		},
 	}
 
 	clientID, clientKey := createPeer(t)
 	serverID, serverKey := createPeer(t)
 
-	handshake := func(t *testing.T, clientTransport *Transport, serverTransport *Transport, expectedMuxer string) {
+	handshake := func(t *testing.T, clientTransport *Transport, serverTransport *Transport, expectedMuxer protocol.ID) {
 		clientInsecureConn, serverInsecureConn := connect(t)
 
 		serverConnChan := make(chan sec.SecureConn)

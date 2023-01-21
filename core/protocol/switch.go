@@ -7,10 +7,6 @@ import (
 	"github.com/multiformats/go-multistream"
 )
 
-type StringLike interface {
-	~string
-}
-
 // HandlerFunc is a user-provided function used by the Router to
 // handle a protocol/stream.
 //

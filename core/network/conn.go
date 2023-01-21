@@ -6,6 +6,7 @@ import (
 
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 
 	ma "github.com/multiformats/go-multiaddr"
 )
@@ -37,11 +38,11 @@ type Conn interface {
 // ConnectionState holds information about the connection.
 type ConnectionState struct {
 	// The stream multiplexer used on this connection (if any). For example: /yamux/1.0.0
-	StreamMultiplexer string
+	StreamMultiplexer protocol.ID
 	// The security protocol used on this connection (if any). For example: /tls/1.0.0
-	Security string
+	Security protocol.ID
 	// the transport used on this connection. For example: tcp
-	Transport string
+	Transport protocol.ID
 }
 
 // ConnSecurity is the interface that one can mix into a connection interface to

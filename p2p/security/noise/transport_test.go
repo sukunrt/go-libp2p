@@ -15,6 +15,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/core/sec"
 	"github.com/libp2p/go-libp2p/p2p/security/noise/pb"
 
@@ -37,7 +38,7 @@ func newTestTransport(t *testing.T, typ, bits int) *Transport {
 	}
 }
 
-func newTestTransportWithMuxers(t *testing.T, typ, bits int, muxers []string) *Transport {
+func newTestTransportWithMuxers(t *testing.T, typ, bits int, muxers []protocol.ID) *Transport {
 	transport := newTestTransport(t, typ, bits)
 	transport.muxers = muxers
 	return transport
@@ -632,9 +633,9 @@ func TestEarlyfffDataAcceptedWithNoHandler(t *testing.T) {
 }
 
 type noiseEarlyDataTestCase struct {
-	clientProtos   []string
-	serverProtos   []string
-	expectedResult string
+	clientProtos   []protocol.ID
+	serverProtos   []protocol.ID
+	expectedResult protocol.ID
 }
 
 func TestHandshakeWithTransportEarlyData(t *testing.T) {
@@ -645,43 +646,43 @@ func TestHandshakeWithTransportEarlyData(t *testing.T) {
 			expectedResult: "",
 		},
 		{
-			clientProtos:   []string{"muxer1"},
-			serverProtos:   []string{"muxer1"},
+			clientProtos:   []protocol.ID{"muxer1"},
+			serverProtos:   []protocol.ID{"muxer1"},
 			expectedResult: "muxer1",
 		},
 		{
-			clientProtos:   []string{"muxer1"},
-			serverProtos:   []string{},
+			clientProtos:   []protocol.ID{"muxer1"},
+			serverProtos:   []protocol.ID{},
 			expectedResult: "",
 		},
 		{
-			clientProtos:   []string{},
-			serverProtos:   []string{"muxer2"},
+			clientProtos:   []protocol.ID{},
+			serverProtos:   []protocol.ID{"muxer2"},
 			expectedResult: "",
 		},
 		{
-			clientProtos:   []string{"muxer2"},
-			serverProtos:   []string{"muxer1"},
+			clientProtos:   []protocol.ID{"muxer2"},
+			serverProtos:   []protocol.ID{"muxer1"},
 			expectedResult: "",
 		},
 		{
-			clientProtos:   []string{"muxer1", "muxer2"},
-			serverProtos:   []string{"muxer2", "muxer1"},
+			clientProtos:   []protocol.ID{"muxer1", "muxer2"},
+			serverProtos:   []protocol.ID{"muxer2", "muxer1"},
 			expectedResult: "muxer1",
 		},
 		{
-			clientProtos:   []string{"muxer3", "muxer2", "muxer1"},
-			serverProtos:   []string{"muxer2", "muxer1"},
+			clientProtos:   []protocol.ID{"muxer3", "muxer2", "muxer1"},
+			serverProtos:   []protocol.ID{"muxer2", "muxer1"},
 			expectedResult: "muxer2",
 		},
 		{
-			clientProtos:   []string{"muxer1", "muxer2"},
-			serverProtos:   []string{"muxer3"},
+			clientProtos:   []protocol.ID{"muxer1", "muxer2"},
+			serverProtos:   []protocol.ID{"muxer3"},
 			expectedResult: "",
 		},
 	}
 
-	noiseHandshake := func(t *testing.T, initProtos, respProtos []string, expectedProto string) {
+	noiseHandshake := func(t *testing.T, initProtos, respProtos []protocol.ID, expectedProto protocol.ID) {
 		initTransport := newTestTransportWithMuxers(t, crypto.Ed25519, 2048, initProtos)
 		respTransport := newTestTransportWithMuxers(t, crypto.Ed25519, 2048, respProtos)
 

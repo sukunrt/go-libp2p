@@ -7,6 +7,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	tpt "github.com/libp2p/go-libp2p/core/transport"
 
 	ma "github.com/multiformats/go-multiaddr"
@@ -158,6 +159,6 @@ var transportName = ma.ProtocolWithCode(ma.P_CIRCUIT).Name
 
 func (c capableConn) ConnState() network.ConnectionState {
 	return network.ConnectionState{
-		Transport: transportName,
+		Transport: protocol.ID(transportName),
 	}
 }

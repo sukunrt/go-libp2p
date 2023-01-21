@@ -127,5 +127,5 @@ func (ph *peerHandler) openStream(ctx context.Context, proto protocol.ID) (netwo
 	// negotiate a stream without opening a new connection as we "should" already have a connection.
 	ctx, cancel := context.WithTimeout(network.WithNoDial(ctx, "should already have connection"), 30*time.Second)
 	defer cancel()
-	return ph.ids.Host.NewStream(ctx, ph.pid, protocol.ID(proto))
+	return ph.ids.Host.NewStream(ctx, ph.pid, proto)
 }
