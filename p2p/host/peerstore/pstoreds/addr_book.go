@@ -601,10 +601,12 @@ func (ab *dsAddrBook) deleteAddrs(p peer.ID, addrs []ma.Multiaddr) (err error) {
 func cleanAddrs(addrs []ma.Multiaddr) []ma.Multiaddr {
 	clean := make([]ma.Multiaddr, 0, len(addrs))
 	for _, addr := range addrs {
-		if addr == nil {
+		// Remove suffix of /p2p/peer-id from address
+		ad, _ := peer.SplitAddr(addr)
+		if ad == nil {
 			continue
 		}
-		clean = append(clean, addr)
+		clean = append(clean, ad)
 	}
 	return clean
 }

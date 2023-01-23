@@ -141,6 +141,14 @@ func testAddAddress(ab pstore.AddrBook, clk *mockClock.Mock) func(*testing.T) {
 			ab.AddAddrs("", addrs, time.Hour)
 			AssertAddressesEqual(t, addrs, ab.Addrs(""))
 		})
+
+		t.Run("add a /p2p address", func(t *testing.T) {
+			peerId := GeneratePeerIDs(1)[0]
+			addr := GenerateAddrs(1)
+			p2pAddr := addr[0].Encapsulate(Multiaddr("/p2p/" + peerId.String()))
+			ab.AddAddr(peerId, p2pAddr, time.Hour)
+			AssertAddressesEqual(t, addr, ab.Addrs(peerId))
+		})
 	}
 }
 

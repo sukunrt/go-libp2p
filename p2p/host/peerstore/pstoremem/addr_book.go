@@ -238,19 +238,21 @@ func (mab *memoryAddrBook) addAddrsUnlocked(s *addrSegment, p peer.ID, addrs []m
 
 	exp := mab.clock.Now().Add(ttl)
 	for _, addr := range addrs {
-		if addr == nil {
+		// Remove suffix of /p2p/peer-id from address
+		taddr, _ := peer.SplitAddr(addr)
+		if taddr == nil {
 			log.Warnw("was passed nil multiaddr", "peer", p)
 			continue
 		}
 
 		// find the highest TTL and Expiry time between
 		// existing records and function args
-		a, found := amap[string(addr.Bytes())] // won't allocate.
+		a, found := amap[string(taddr.Bytes())] // won't allocate.
 		if !found {
 			// not found, announce it.
-			entry := &expiringAddr{Addr: addr, Expires: exp, TTL: ttl}
-			amap[string(addr.Bytes())] = entry
-			mab.subManager.BroadcastAddr(p, addr)
+			entry := &expiringAddr{Addr: taddr, Expires: exp, TTL: ttl}
+			amap[string(taddr.Bytes())] = entry
+			mab.subManager.BroadcastAddr(p, taddr)
 		} else {
 			// update ttl & exp to whichever is greater between new and existing entry
 			if ttl > a.TTL {
@@ -283,17 +285,18 @@ func (mab *memoryAddrBook) SetAddrs(p peer.ID, addrs []ma.Multiaddr, ttl time.Du
 
 	exp := mab.clock.Now().Add(ttl)
 	for _, addr := range addrs {
-		if addr == nil {
+		taddr, _ := peer.SplitAddr(addr)
+		if taddr == nil {
 			log.Warnw("was passed nil multiaddr", "peer", p)
 			continue
 		}
-		aBytes := addr.Bytes()
+		aBytes := taddr.Bytes()
 		key := string(aBytes)
 
 		// re-set all of them for new ttl.
 		if ttl > 0 {
-			amap[key] = &expiringAddr{Addr: addr, Expires: exp, TTL: ttl}
-			mab.subManager.BroadcastAddr(p, addr)
+			amap[key] = &expiringAddr{Addr: taddr, Expires: exp, TTL: ttl}
+			mab.subManager.BroadcastAddr(p, taddr)
 		} else {
 			delete(amap, key)
 		}
