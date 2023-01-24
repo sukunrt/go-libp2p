@@ -239,20 +239,23 @@ func (mab *memoryAddrBook) addAddrsUnlocked(s *addrSegment, p peer.ID, addrs []m
 	exp := mab.clock.Now().Add(ttl)
 	for _, addr := range addrs {
 		// Remove suffix of /p2p/peer-id from address
-		taddr, _ := peer.SplitAddr(addr)
-		if taddr == nil {
+		addr, addrPid := peer.SplitAddr(addr)
+		if addr == nil {
 			log.Warnw("was passed nil multiaddr", "peer", p)
 			continue
 		}
-
+		if addrPid != "" && addrPid != p {
+			log.Warnf("was passed p2p address with a different peerId, found: %s wanted: %s", addrPid, p)
+			continue
+		}
 		// find the highest TTL and Expiry time between
 		// existing records and function args
-		a, found := amap[string(taddr.Bytes())] // won't allocate.
+		a, found := amap[string(addr.Bytes())] // won't allocate.
 		if !found {
 			// not found, announce it.
-			entry := &expiringAddr{Addr: taddr, Expires: exp, TTL: ttl}
-			amap[string(taddr.Bytes())] = entry
-			mab.subManager.BroadcastAddr(p, taddr)
+			entry := &expiringAddr{Addr: addr, Expires: exp, TTL: ttl}
+			amap[string(addr.Bytes())] = entry
+			mab.subManager.BroadcastAddr(p, addr)
 		} else {
 			// update ttl & exp to whichever is greater between new and existing entry
 			if ttl > a.TTL {
@@ -285,18 +288,22 @@ func (mab *memoryAddrBook) SetAddrs(p peer.ID, addrs []ma.Multiaddr, ttl time.Du
 
 	exp := mab.clock.Now().Add(ttl)
 	for _, addr := range addrs {
-		taddr, _ := peer.SplitAddr(addr)
-		if taddr == nil {
+		addr, addrPid := peer.SplitAddr(addr)
+		if addr == nil {
 			log.Warnw("was passed nil multiaddr", "peer", p)
 			continue
 		}
-		aBytes := taddr.Bytes()
+		if addrPid != "" && addrPid != p {
+			log.Warnf("was passed p2p address with a different peerId, found: %s wanted: %s", addrPid, p)
+			continue
+		}
+		aBytes := addr.Bytes()
 		key := string(aBytes)
 
 		// re-set all of them for new ttl.
 		if ttl > 0 {
-			amap[key] = &expiringAddr{Addr: taddr, Expires: exp, TTL: ttl}
-			mab.subManager.BroadcastAddr(p, taddr)
+			amap[key] = &expiringAddr{Addr: addr, Expires: exp, TTL: ttl}
+			mab.subManager.BroadcastAddr(p, addr)
 		} else {
 			delete(amap, key)
 		}

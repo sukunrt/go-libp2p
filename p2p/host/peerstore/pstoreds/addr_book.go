@@ -276,7 +276,7 @@ func (ab *dsAddrBook) AddAddrs(p peer.ID, addrs []ma.Multiaddr, ttl time.Duratio
 	if ttl <= 0 {
 		return
 	}
-	addrs = cleanAddrs(addrs)
+	addrs = cleanAddrs(addrs, p)
 	ab.setAddrs(p, addrs, ttl, ttlExtend, false)
 }
 
@@ -302,7 +302,7 @@ func (ab *dsAddrBook) ConsumePeerRecord(recordEnvelope *record.Envelope, ttl tim
 		return false, nil
 	}
 
-	addrs := cleanAddrs(rec.Addrs)
+	addrs := cleanAddrs(rec.Addrs, rec.PeerID)
 	err = ab.setAddrs(rec.PeerID, addrs, ttl, ttlExtend, true)
 	if err != nil {
 		return false, err
@@ -385,7 +385,7 @@ func (ab *dsAddrBook) SetAddr(p peer.ID, addr ma.Multiaddr, ttl time.Duration) {
 
 // SetAddrs will add or update the TTLs of addresses in the AddrBook.
 func (ab *dsAddrBook) SetAddrs(p peer.ID, addrs []ma.Multiaddr, ttl time.Duration) {
-	addrs = cleanAddrs(addrs)
+	addrs = cleanAddrs(addrs, p)
 	if ttl <= 0 {
 		ab.deleteAddrs(p, addrs)
 		return
@@ -598,15 +598,20 @@ func (ab *dsAddrBook) deleteAddrs(p peer.ID, addrs []ma.Multiaddr) (err error) {
 	return pr.flush(ab.ds)
 }
 
-func cleanAddrs(addrs []ma.Multiaddr) []ma.Multiaddr {
+func cleanAddrs(addrs []ma.Multiaddr, pid peer.ID) []ma.Multiaddr {
 	clean := make([]ma.Multiaddr, 0, len(addrs))
 	for _, addr := range addrs {
 		// Remove suffix of /p2p/peer-id from address
-		ad, _ := peer.SplitAddr(addr)
-		if ad == nil {
+		addr, addrPid := peer.SplitAddr(addr)
+		if addr == nil {
+			log.Warnw("was passed nil multiaddr", "peer", pid)
 			continue
 		}
-		clean = append(clean, ad)
+		if addrPid != "" && addrPid != pid {
+			log.Warnf("was passed p2p address with a different peerId, found: %s wanted: %s", addrPid, pid)
+			continue
+		}
+		clean = append(clean, addr)
 	}
 	return clean
 }

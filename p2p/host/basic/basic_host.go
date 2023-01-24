@@ -709,6 +709,11 @@ func (h *BasicHost) Connect(ctx context.Context, pi peer.AddrInfo) error {
 		}
 	}
 
+	addrs := h.Peerstore().Addrs(pi.ID)
+	if len(addrs) == 0 {
+		return fmt.Errorf("no valid address found for peer %s", pi.ID)
+	}
+
 	return h.dialPeer(ctx, pi.ID)
 }
 
