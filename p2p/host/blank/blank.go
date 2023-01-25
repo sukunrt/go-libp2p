@@ -140,11 +140,6 @@ func (bh *BlankHost) Connect(ctx context.Context, ai peer.AddrInfo) error {
 		return nil
 	}
 
-	addrs := bh.Peerstore().Addrs(ai.ID)
-	if len(addrs) == 0 {
-		return fmt.Errorf("no valid address found for peer %s", ai.ID)
-	}
-
 	_, err := bh.Network().DialPeer(ctx, ai.ID)
 	return err
 }

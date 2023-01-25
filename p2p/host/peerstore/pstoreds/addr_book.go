@@ -604,11 +604,11 @@ func cleanAddrs(addrs []ma.Multiaddr, pid peer.ID) []ma.Multiaddr {
 		// Remove suffix of /p2p/peer-id from address
 		addr, addrPid := peer.SplitAddr(addr)
 		if addr == nil {
-			log.Warnw("was passed nil multiaddr", "peer", pid)
+			log.Warnw("Was passed a nil multiaddr", "peer", pid)
 			continue
 		}
 		if addrPid != "" && addrPid != pid {
-			log.Warnf("was passed p2p address with a different peerId, found: %s wanted: %s", addrPid, pid)
+			log.Warnf("Was passed p2p address with a different peerId. found: %s, expected: %s", addrPid, pid)
 			continue
 		}
 		clean = append(clean, addr)
