@@ -6,7 +6,6 @@ import (
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	tpt "github.com/libp2p/go-libp2p/core/transport"
 
 	"github.com/lucas-clemente/quic-go"
@@ -88,5 +87,5 @@ func (c *conn) ConnState() network.ConnectionState {
 	if _, err := c.LocalMultiaddr().ValueForProtocol(ma.P_QUIC); err == nil {
 		t = "quic"
 	}
-	return network.ConnectionState{Transport: protocol.ID(t)}
+	return network.ConnectionState{Transport: t}
 }

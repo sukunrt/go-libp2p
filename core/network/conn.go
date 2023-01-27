@@ -42,7 +42,7 @@ type ConnectionState struct {
 	// The security protocol used on this connection (if any). For example: /tls/1.0.0
 	Security protocol.ID
 	// the transport used on this connection. For example: tcp
-	Transport protocol.ID
+	Transport string
 }
 
 // ConnSecurity is the interface that one can mix into a connection interface to
