@@ -221,7 +221,7 @@ func testPeerstoreProtoStore(ps pstore.Peerstore) func(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, out, len(protos), "got wrong number of protocols back")
 
-			sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+			sortProtos(out)
 			for i, p := range protos {
 				if out[i] != p {
 					t.Fatal("got wrong protocol")

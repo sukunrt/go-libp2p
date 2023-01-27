@@ -13,7 +13,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	basic "github.com/libp2p/go-libp2p/p2p/host/basic"
 	relayv1 "github.com/libp2p/go-libp2p/p2p/protocol/circuitv1/relay"
 	circuitv2 "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/client"
@@ -24,8 +23,8 @@ import (
 )
 
 const (
-	protoIDv1 = protocol.ID(relayv1.ProtoID)
-	protoIDv2 = protocol.ID(circuitv2_proto.ProtoIDv2Hop)
+	protoIDv1 = relayv1.ProtoID
+	protoIDv2 = circuitv2_proto.ProtoIDv2Hop
 )
 
 // Terminology:

@@ -122,12 +122,12 @@ func appendConnectionState(tags []string, cs network.ConnectionState) []string {
 		// This shouldn't happen, unless the transport doesn't properly set the Transport field in the ConnectionState.
 		tags = append(tags, "unknown")
 	} else {
-		tags = append(tags, cs.Transport)
+		tags = append(tags, string(cs.Transport))
 	}
 	// These might be empty, depending on the transport.
 	// For example, QUIC doesn't set security nor muxer.
-	tags = append(tags, cs.Security)
-	tags = append(tags, cs.StreamMultiplexer)
+	tags = append(tags, string(cs.Security))
+	tags = append(tags, string(cs.StreamMultiplexer))
 	return tags
 }
 
