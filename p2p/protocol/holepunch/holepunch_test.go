@@ -418,9 +418,9 @@ func mkHostWithStaticAutoRelay(t *testing.T, relay host.Host) host.Host {
 	h, err := libp2p.New(
 		libp2p.ListenAddrs(ma.StringCast("/ip4/127.0.0.1/tcp/0")),
 		libp2p.EnableRelay(),
-		libp2p.EnableAutoRelay(
+		libp2p.EnableAutoRelayWithStaticRelays(
+			[]peer.AddrInfo{pi},
 			autorelay.WithCircuitV1Support(),
-			autorelay.WithStaticRelays([]peer.AddrInfo{pi}),
 		),
 		libp2p.ForceReachabilityPrivate(),
 		libp2p.ResourceManager(&network.NullResourceManager{}),

@@ -91,7 +91,7 @@ func WithPeerSource(f func(ctx context.Context, numPeers int) <-chan peer.AddrIn
 			return errAlreadyHavePeerSource
 		}
 		c.peerSource = f
-		c.minInterval = minInterval
+		WithMinInterval(minInterval)(c)
 		return nil
 	}
 }
@@ -171,6 +171,15 @@ func WithMaxCandidateAge(d time.Duration) Option {
 func WithClock(cl clock.Clock) Option {
 	return func(c *config) error {
 		c.clock = cl
+		return nil
+	}
+}
+
+// WithMinInterval sets the minimum interval after which peerSource callback will be called for more
+// candidates even if AutoRelay needs new candidates
+func WithMinInterval(interval time.Duration) Option {
+	return func(c *config) error {
+		c.minInterval = interval
 		return nil
 	}
 }

@@ -62,6 +62,27 @@ func newPrivateNode(t *testing.T, opts ...autorelay.Option) host.Host {
 	return h
 }
 
+func newPrivateNodeWithPeerSource(t *testing.T, peerSource func(context.Context, int) <-chan peer.AddrInfo,
+	opts ...autorelay.Option) host.Host {
+	t.Helper()
+	h, err := libp2p.New(
+		libp2p.ForceReachabilityPrivate(),
+		libp2p.EnableAutoRelayWithPeerSource(peerSource, opts...),
+	)
+	require.NoError(t, err)
+	return h
+}
+
+func newPrivateNodeWithStaticRelays(t *testing.T, static []peer.AddrInfo, opts ...autorelay.Option) host.Host {
+	t.Helper()
+	h, err := libp2p.New(
+		libp2p.ForceReachabilityPrivate(),
+		libp2p.EnableAutoRelayWithStaticRelays(static, opts...),
+	)
+	require.NoError(t, err)
+	return h
+}
+
 func newRelay(t *testing.T) host.Host {
 	t.Helper()
 	h, err := libp2p.New(
@@ -116,8 +137,8 @@ func newRelayV1(t *testing.T) host.Host {
 
 func TestSingleCandidate(t *testing.T) {
 	var counter int
-	h := newPrivateNode(t,
-		autorelay.WithPeerSource(func(_ context.Context, num int) <-chan peer.AddrInfo {
+	h := newPrivateNodeWithPeerSource(t,
+		func(_ context.Context, num int) <-chan peer.AddrInfo {
 			counter++
 			require.Equal(t, 1, num)
 			peerChan := make(chan peer.AddrInfo, num)
@@ -126,10 +147,11 @@ func TestSingleCandidate(t *testing.T) {
 			t.Cleanup(func() { r.Close() })
 			peerChan <- peer.AddrInfo{ID: r.ID(), Addrs: r.Addrs()}
 			return peerChan
-		}, time.Hour),
+		},
 		autorelay.WithMaxCandidates(1),
 		autorelay.WithNumRelays(99999),
 		autorelay.WithBootDelay(0),
+		autorelay.WithMinInterval(time.Hour),
 	)
 	defer h.Close()
 
@@ -150,16 +172,17 @@ func TestSingleRelay(t *testing.T) {
 	}
 	close(peerChan)
 
-	h := newPrivateNode(t,
-		autorelay.WithPeerSource(func(_ context.Context, num int) <-chan peer.AddrInfo {
+	h := newPrivateNodeWithPeerSource(t,
+		func(_ context.Context, num int) <-chan peer.AddrInfo {
 			require.False(t, called, "expected the peer source callback to only have been called once")
 			called = true
 			require.Equal(t, numCandidates, num)
 			return peerChan
-		}, time.Hour),
+		},
 		autorelay.WithMaxCandidates(numCandidates),
 		autorelay.WithNumRelays(1),
 		autorelay.WithBootDelay(0),
+		autorelay.WithMinInterval(time.Hour),
 	)
 	defer h.Close()
 
@@ -177,16 +200,17 @@ func TestPreferRelayV2(t *testing.T) {
 		t.Fatal("used relay v1")
 	})
 
-	h := newPrivateNode(t,
-		autorelay.WithPeerSource(func(context.Context, int) <-chan peer.AddrInfo {
+	h := newPrivateNodeWithPeerSource(t,
+		func(context.Context, int) <-chan peer.AddrInfo {
 			peerChan := make(chan peer.AddrInfo, 1)
 			defer close(peerChan)
 			peerChan <- peer.AddrInfo{ID: r.ID(), Addrs: r.Addrs()}
 			return peerChan
-		}, time.Hour),
+		},
 		autorelay.WithMaxCandidates(1),
 		autorelay.WithNumRelays(99999),
 		autorelay.WithBootDelay(0),
+		autorelay.WithMinInterval(time.Hour),
 	)
 	defer h.Close()
 
@@ -195,11 +219,12 @@ func TestPreferRelayV2(t *testing.T) {
 
 func TestWaitForCandidates(t *testing.T) {
 	peerChan := make(chan peer.AddrInfo)
-	h := newPrivateNode(t,
-		autorelay.WithPeerSource(func(context.Context, int) <-chan peer.AddrInfo { return peerChan }, time.Hour),
+	h := newPrivateNodeWithPeerSource(t,
+		func(context.Context, int) <-chan peer.AddrInfo { return peerChan },
 		autorelay.WithMinCandidates(2),
 		autorelay.WithNumRelays(1),
 		autorelay.WithBootDelay(time.Hour),
+		autorelay.WithMinInterval(time.Hour),
 	)
 	defer h.Close()
 
@@ -243,19 +268,20 @@ func TestBackoff(t *testing.T) {
 	})
 
 	var counter int32 // to be used atomically
-	h := newPrivateNode(t,
-		autorelay.WithPeerSource(func(context.Context, int) <-chan peer.AddrInfo {
+	h := newPrivateNodeWithPeerSource(t,
+		func(context.Context, int) <-chan peer.AddrInfo {
 			// always return the same node, and make sure we don't try to connect to it too frequently
 			atomic.AddInt32(&counter, 1)
 			peerChan := make(chan peer.AddrInfo, 1)
 			peerChan <- peer.AddrInfo{ID: r.ID(), Addrs: r.Addrs()}
 			close(peerChan)
 			return peerChan
-		}, time.Second),
+		},
 		autorelay.WithNumRelays(1),
 		autorelay.WithBootDelay(0),
 		autorelay.WithBackoff(backoff),
 		autorelay.WithClock(cl),
+		autorelay.WithMinInterval(time.Second),
 	)
 	defer h.Close()
 
@@ -280,8 +306,8 @@ func TestStaticRelays(t *testing.T) {
 		staticRelays = append(staticRelays, peer.AddrInfo{ID: r.ID(), Addrs: r.Addrs()})
 	}
 
-	h := newPrivateNode(t,
-		autorelay.WithStaticRelays(staticRelays),
+	h := newPrivateNodeWithStaticRelays(t,
+		staticRelays,
 		autorelay.WithNumRelays(1),
 	)
 	defer h.Close()
@@ -297,9 +323,10 @@ func TestRelayV1(t *testing.T) {
 		peerChan <- peer.AddrInfo{ID: r.ID(), Addrs: r.Addrs()}
 		close(peerChan)
 
-		h := newPrivateNode(t,
-			autorelay.WithPeerSource(func(context.Context, int) <-chan peer.AddrInfo { return peerChan }, time.Hour),
+		h := newPrivateNodeWithPeerSource(t,
+			func(context.Context, int) <-chan peer.AddrInfo { return peerChan },
 			autorelay.WithBootDelay(0),
+			autorelay.WithMinInterval(time.Hour),
 		)
 		defer h.Close()
 
@@ -313,10 +340,11 @@ func TestRelayV1(t *testing.T) {
 		peerChan <- peer.AddrInfo{ID: r.ID(), Addrs: r.Addrs()}
 		close(peerChan)
 
-		h := newPrivateNode(t,
-			autorelay.WithPeerSource(func(context.Context, int) <-chan peer.AddrInfo { return peerChan }, time.Hour),
+		h := newPrivateNodeWithPeerSource(t,
+			func(context.Context, int) <-chan peer.AddrInfo { return peerChan },
 			autorelay.WithBootDelay(0),
 			autorelay.WithCircuitV1Support(),
+			autorelay.WithMinInterval(time.Hour),
 		)
 		defer h.Close()
 
@@ -337,12 +365,13 @@ func TestConnectOnDisconnect(t *testing.T) {
 		peerChan <- peer.AddrInfo{ID: r.ID(), Addrs: r.Addrs()}
 		relays = append(relays, r)
 	}
-	h := newPrivateNode(t,
-		autorelay.WithPeerSource(func(context.Context, int) <-chan peer.AddrInfo { return peerChan }, time.Hour),
+	h := newPrivateNodeWithPeerSource(t,
+		func(context.Context, int) <-chan peer.AddrInfo { return peerChan },
 		autorelay.WithMinCandidates(1),
 		autorelay.WithMaxCandidates(num),
 		autorelay.WithNumRelays(1),
 		autorelay.WithBootDelay(0),
+		autorelay.WithMinInterval(time.Hour),
 	)
 	defer h.Close()
 
@@ -386,19 +415,20 @@ func TestMaxAge(t *testing.T) {
 	peerChans <- peerChan2
 	close(peerChans)
 
-	h := newPrivateNode(t,
-		autorelay.WithPeerSource(func(context.Context, int) <-chan peer.AddrInfo {
+	h := newPrivateNodeWithPeerSource(t,
+		func(context.Context, int) <-chan peer.AddrInfo {
 			c, ok := <-peerChans
 			if !ok {
 				t.Fatal("unexpected call to PeerSource")
 			}
 			return c
-		}, time.Second),
+		},
 		autorelay.WithNumRelays(1),
 		autorelay.WithMaxCandidates(100),
 		autorelay.WithBootDelay(0),
 		autorelay.WithMaxCandidateAge(20*time.Minute),
 		autorelay.WithClock(cl),
+		autorelay.WithMinInterval(time.Second),
 	)
 	defer h.Close()
 
@@ -507,8 +537,8 @@ func TestReconnectToStaticRelays(t *testing.T) {
 		staticRelays = append(staticRelays, peer.AddrInfo{ID: r.ID(), Addrs: r.Addrs()})
 	}
 
-	h := newPrivateNode(t,
-		autorelay.WithStaticRelays(staticRelays),
+	h := newPrivateNodeWithStaticRelays(t,
+		staticRelays,
 		autorelay.WithClock(cl),
 	)
 
@@ -531,4 +561,26 @@ func TestReconnectToStaticRelays(t *testing.T) {
 
 	cl.Add(time.Hour)
 	expectDeltaInAddrUpdated(t, addrUpdated, -1)
+}
+
+func TestMinInterval(t *testing.T) {
+	h := newPrivateNodeWithPeerSource(t,
+		func(context.Context, int) <-chan peer.AddrInfo {
+			peerChan := make(chan peer.AddrInfo, 1)
+			defer close(peerChan)
+			r1 := newRelay(t)
+			t.Cleanup(func() { r1.Close() })
+			peerChan <- peer.AddrInfo{ID: r1.ID(), Addrs: r1.Addrs()}
+			return peerChan
+		},
+		autorelay.WithMinCandidates(2),
+		autorelay.WithNumRelays(1),
+		autorelay.WithBootDelay(time.Hour),
+		autorelay.WithMinInterval(1*time.Second),
+	)
+	defer h.Close()
+
+	// The second call to peerSource should happen after 1 second
+	require.Never(t, func() bool { return numRelays(h) > 0 }, 1*time.Second, 100*time.Millisecond)
+	require.Eventually(t, func() bool { return numRelays(h) > 0 }, 2*time.Second, 100*time.Millisecond)
 }

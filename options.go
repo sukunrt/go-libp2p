@@ -4,6 +4,7 @@ package libp2p
 // those are in defaults.go).
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/metrics"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/pnet"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -307,10 +309,37 @@ func EnableRelayService(opts ...relayv2.Option) Option {
 //
 // This subsystem performs automatic address rewriting to advertise relay addresses when it
 // detects that the node is publicly unreachable (e.g. behind a NAT).
+//
+// Deprecated: Use EnableAutoRelayWithStaticRelays or EnableAutoRelayWithPeerSource
 func EnableAutoRelay(opts ...autorelay.Option) Option {
 	return func(cfg *Config) error {
 		cfg.EnableAutoRelay = true
 		cfg.AutoRelayOpts = opts
+		return nil
+	}
+}
+
+// EnableAutoRelayWithStaticRelays configures libp2p to enable the AutoRelay subsystem using
+// the provided slice of relays as relay candidates
+// This subsystem performs automatic address rewriting to advertise relay addresses when it
+// detects that the node is publicly unreachable (e.g. behind a NAT).
+func EnableAutoRelayWithStaticRelays(static []peer.AddrInfo, opts ...autorelay.Option) Option {
+	return func(cfg *Config) error {
+		cfg.EnableAutoRelay = true
+		cfg.AutoRelayOpts = append([]autorelay.Option{autorelay.WithStaticRelays(static)}, opts...)
+		return nil
+	}
+}
+
+// EnableAutoRelayWithPeerSource configures libp2p to enable the AutoRelay subsystem using
+// the provided peerSource callback to get more relay candidates
+// This subsystem performs automatic address rewriting to advertise relay addresses when it
+// detects that the node is publicly unreachable (e.g. behind a NAT).
+func EnableAutoRelayWithPeerSource(peerSource func(context.Context, int) <-chan peer.AddrInfo,
+	opts ...autorelay.Option) Option {
+	return func(cfg *Config) error {
+		cfg.EnableAutoRelay = true
+		cfg.AutoRelayOpts = append([]autorelay.Option{autorelay.WithPeerSource(peerSource, 30*time.Second)}, opts...)
 		return nil
 	}
 }
