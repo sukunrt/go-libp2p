@@ -69,7 +69,7 @@ func TestMuxerNegotiation(t *testing.T) {
 			Name:             "no preference overlap",
 			ServerPreference: []libp2p.Option{yamuxOpt},
 			ClientPreference: []libp2p.Option{mplexOpt},
-			Error:            "failed to negotiate stream multiplexer: protocol not supported",
+			Error:            "failed to negotiate stream multiplexer: protocols not supported",
 		},
 	}
 

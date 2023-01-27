@@ -45,7 +45,7 @@ func TestSecurityNegotiation(t *testing.T) {
 			Name:             "no  overlap",
 			ServerPreference: []libp2p.Option{noiseOpt},
 			ClientPreference: []libp2p.Option{tlsOpt},
-			Error:            "failed to negotiate security protocol: protocol not supported",
+			Error:            "failed to negotiate security protocol: protocols not supported",
 		},
 	}
 

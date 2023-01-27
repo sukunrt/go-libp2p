@@ -27,7 +27,7 @@ func TestReservationFailures(t *testing.T) {
 		{
 			name:          "unsupported protocol",
 			streamHandler: nil,
-			err:           "protocol not supported",
+			err:           "protocols not supported",
 		},
 		{
 			name: "wrong message type",
