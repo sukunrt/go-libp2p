@@ -158,8 +158,8 @@ func TestProtocolHandlerEvents(t *testing.T) {
 
 	h.SetStreamHandler(protocol.TestingID, func(s network.Stream) {})
 	assert([]protocol.ID{protocol.TestingID}, nil)
-	h.SetStreamHandler(protocol.ID("foo"), func(s network.Stream) {})
-	assert([]protocol.ID{protocol.ID("foo")}, nil)
+	h.SetStreamHandler("foo", func(s network.Stream) {})
+	assert([]protocol.ID{"foo"}, nil)
 	h.RemoveStreamHandler(protocol.TestingID)
 	assert(nil, []protocol.ID{protocol.TestingID})
 }
@@ -273,9 +273,9 @@ func TestHostProtoPreference(t *testing.T) {
 	defer h2.Close()
 
 	const (
-		protoOld   = protocol.ID("/testing")
-		protoNew   = protocol.ID("/testing/1.1.0")
-		protoMinor = protocol.ID("/testing/1.2.0")
+		protoOld   = "/testing"
+		protoNew   = "/testing/1.1.0"
+		protoMinor = "/testing/1.2.0"
 	)
 
 	connectedOn := make(chan protocol.ID)

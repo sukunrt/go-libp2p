@@ -188,37 +188,37 @@ func TestHandshakeWithNextProtoSucceeds(t *testing.T) {
 		{
 			clientProtos:   []protocol.ID{"muxer1", "muxer2"},
 			serverProtos:   []protocol.ID{"muxer2", "muxer1"},
-			expectedResult: protocol.ID("muxer1"),
+			expectedResult: "muxer1",
 		},
 		{
 			clientProtos:   []protocol.ID{"muxer1", "muxer2", "libp2p"},
 			serverProtos:   []protocol.ID{"muxer2", "muxer1", "libp2p"},
-			expectedResult: protocol.ID("muxer1"),
+			expectedResult: "muxer1",
 		},
 		{
 			clientProtos:   []protocol.ID{"muxer1", "libp2p"},
 			serverProtos:   []protocol.ID{"libp2p"},
-			expectedResult: protocol.ID(""),
+			expectedResult: "",
 		},
 		{
 			clientProtos:   []protocol.ID{"libp2p"},
 			serverProtos:   []protocol.ID{"libp2p"},
-			expectedResult: protocol.ID(""),
+			expectedResult: "",
 		},
 		{
 			clientProtos:   []protocol.ID{"muxer1"},
 			serverProtos:   []protocol.ID{},
-			expectedResult: protocol.ID(""),
+			expectedResult: "",
 		},
 		{
 			clientProtos:   []protocol.ID{},
 			serverProtos:   []protocol.ID{"muxer1"},
-			expectedResult: protocol.ID(""),
+			expectedResult: "",
 		},
 		{
 			clientProtos:   []protocol.ID{"muxer2"},
 			serverProtos:   []protocol.ID{"muxer1"},
-			expectedResult: protocol.ID(""),
+			expectedResult: "",
 		},
 	}
 

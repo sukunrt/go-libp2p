@@ -383,7 +383,7 @@ func TestIdentifyPushWhileIdentifyingConn(t *testing.T) {
 	handler := func(s network.Stream) {
 		<-block
 		w := pbio.NewDelimitedWriter(s)
-		w.WriteMsg(&pb.Identify{Protocols:protocol.ConvertToStrings(h1.Mux().Protocols())})
+		w.WriteMsg(&pb.Identify{Protocols: protocol.ConvertToStrings(h1.Mux().Protocols())})
 		s.Close()
 	}
 	h1.RemoveStreamHandler(identify.ID)
@@ -613,9 +613,9 @@ func TestLargeIdentifyMessage(t *testing.T) {
 	// add protocol strings to make the message larger
 	// about 2K of protocol strings
 	for i := 0; i < 500; i++ {
-		r := fmt.Sprintf("rand%d", i)
-		h1.SetStreamHandler(protocol.ID(r), func(network.Stream) {})
-		h2.SetStreamHandler(protocol.ID(r), func(network.Stream) {})
+		r := protocol.ID(fmt.Sprintf("rand%d", i))
+		h1.SetStreamHandler(r, func(network.Stream) {})
+		h2.SetStreamHandler(r, func(network.Stream) {})
 	}
 
 	h1p := h1.ID()
@@ -719,9 +719,9 @@ func TestLargePushMessage(t *testing.T) {
 	// add protocol strings to make the message larger
 	// about 2K of protocol strings
 	for i := 0; i < 500; i++ {
-		r := fmt.Sprintf("rand%d", i)
-		h1.SetStreamHandler(protocol.ID(r), func(network.Stream) {})
-		h2.SetStreamHandler(protocol.ID(r), func(network.Stream) {})
+		r := protocol.ID(fmt.Sprintf("rand%d", i))
+		h1.SetStreamHandler(r, func(network.Stream) {})
+		h2.SetStreamHandler(r, func(network.Stream) {})
 	}
 
 	h1p := h1.ID()
