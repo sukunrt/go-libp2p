@@ -15,19 +15,21 @@ import (
 
 // basicBus is a type-based event delivery system
 type basicBus struct {
-	lk       sync.RWMutex
-	nodes    map[reflect.Type]*node
-	wildcard *wildcardNode
+	lk            sync.RWMutex
+	nodes         map[reflect.Type]*node
+	wildcard      *wildcardNode
+	metricsTracer MetricsTracer
 }
 
 var _ event.Bus = (*basicBus)(nil)
 
 type emitter struct {
-	n       *node
-	w       *wildcardNode
-	typ     reflect.Type
-	closed  int32
-	dropper func(reflect.Type)
+	n             *node
+	w             *wildcardNode
+	typ           reflect.Type
+	closed        int32
+	dropper       func(reflect.Type)
+	metricsTracer MetricsTracer
 }
 
 func (e *emitter) Emit(evt interface{}) error {
@@ -36,7 +38,7 @@ func (e *emitter) Emit(evt interface{}) error {
 	}
 	e.n.emit(evt)
 	e.w.emit(evt)
-
+	e.metricsTracer.EventEmitted(e.typ)
 	return nil
 }
 
@@ -52,8 +54,9 @@ func (e *emitter) Close() error {
 
 func NewBus() event.Bus {
 	return &basicBus{
-		nodes:    map[reflect.Type]*node{},
-		wildcard: new(wildcardNode),
+		nodes:         map[reflect.Type]*node{},
+		wildcard:      new(wildcardNode),
+		metricsTracer: NewMetricsTracer(),
 	}
 }
 
@@ -255,7 +258,7 @@ func (b *basicBus) Emitter(evtType interface{}, opts ...event.EmitterOpt) (e eve
 	b.withNode(typ, func(n *node) {
 		atomic.AddInt32(&n.nEmitters, 1)
 		n.keepLast = n.keepLast || settings.makeStateful
-		e = &emitter{n: n, typ: typ, dropper: b.tryDropNode, w: b.wildcard}
+		e = &emitter{n: n, typ: typ, dropper: b.tryDropNode, w: b.wildcard, metricsTracer: b.metricsTracer}
 	}, nil)
 	return
 }
