@@ -1,16 +1,37 @@
 package eventbus
 
+import (
+	"fmt"
+	"sync/atomic"
+)
+
 type subSettings struct {
 	buffer int
+	name   string
 }
+
+var subCnt atomic.Int64
 
 var subSettingsDefault = subSettings{
 	buffer: 16,
 }
 
+func newSubSettings() subSettings {
+	settings := subSettingsDefault
+	settings.name = fmt.Sprintf("subscriber-%d", subCnt.Add(1))
+	return settings
+}
+
 func BufSize(n int) func(interface{}) error {
 	return func(s interface{}) error {
 		s.(*subSettings).buffer = n
+		return nil
+	}
+}
+
+func Name(name string) func(interface{}) error {
+	return func(s interface{}) error {
+		s.(*subSettings).name = name
 		return nil
 	}
 }

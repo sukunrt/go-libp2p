@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/event"
 )
@@ -36,9 +37,14 @@ func (e *emitter) Emit(evt interface{}) error {
 	if atomic.LoadInt32(&e.closed) != 0 {
 		return fmt.Errorf("emitter is closed")
 	}
+	st := time.Now()
+
 	e.n.emit(evt)
 	e.w.emit(evt)
+
+	d := time.Since(st)
 	e.metricsTracer.EventEmitted(e.typ)
+	e.metricsTracer.NotificationTime(e.typ, d)
 	return nil
 }
 
@@ -53,10 +59,12 @@ func (e *emitter) Close() error {
 }
 
 func NewBus() event.Bus {
+	metricsTracer := NewMetricsTracer()
+	wildcard := &wildcardNode{metricsTracer: metricsTracer}
 	return &basicBus{
 		nodes:         map[reflect.Type]*node{},
-		wildcard:      new(wildcardNode),
-		metricsTracer: NewMetricsTracer(),
+		wildcard:      wildcard,
+		metricsTracer: metricsTracer,
 	}
 }
 
@@ -65,7 +73,7 @@ func (b *basicBus) withNode(typ reflect.Type, cb func(*node), async func(*node))
 
 	n, ok := b.nodes[typ]
 	if !ok {
-		n = newNode(typ)
+		n = newNode(typ, b.metricsTracer)
 		b.nodes[typ] = n
 	}
 
@@ -105,8 +113,10 @@ func (b *basicBus) tryDropNode(typ reflect.Type) {
 }
 
 type wildcardSub struct {
-	ch chan interface{}
-	w  *wildcardNode
+	ch            chan interface{}
+	w             *wildcardNode
+	metricsTracer MetricsTracer
+	name          string
 }
 
 func (w *wildcardSub) Out() <-chan interface{} {
@@ -115,13 +125,21 @@ func (w *wildcardSub) Out() <-chan interface{} {
 
 func (w *wildcardSub) Close() error {
 	w.w.removeSink(w.ch)
+	w.metricsTracer.RemoveSubscriber(reflect.TypeOf(event.WildcardSubscription))
 	return nil
 }
 
+type namedSink struct {
+	name string
+	ch   chan interface{}
+}
+
 type sub struct {
-	ch      chan interface{}
-	nodes   []*node
-	dropper func(reflect.Type)
+	ch            chan interface{}
+	nodes         []*node
+	dropper       func(reflect.Type)
+	metricsTracer MetricsTracer
+	name          string
 }
 
 func (s *sub) Out() <-chan interface{} {
@@ -140,9 +158,11 @@ func (s *sub) Close() error {
 		n.lk.Lock()
 
 		for i := 0; i < len(n.sinks); i++ {
-			if n.sinks[i] == s.ch {
+			if n.sinks[i].ch == s.ch {
 				n.sinks[i], n.sinks[len(n.sinks)-1] = n.sinks[len(n.sinks)-1], nil
 				n.sinks = n.sinks[:len(n.sinks)-1]
+
+				s.metricsTracer.RemoveSubscriber(n.typ)
 				break
 			}
 		}
@@ -165,7 +185,7 @@ var _ event.Subscription = (*sub)(nil)
 // publishers to get blocked. CancelFunc is guaranteed to return after last send
 // to the channel
 func (b *basicBus) Subscribe(evtTypes interface{}, opts ...event.SubscriptionOpt) (_ event.Subscription, err error) {
-	settings := subSettingsDefault
+	settings := newSubSettings()
 	for _, opt := range opts {
 		if err := opt(&settings); err != nil {
 			return nil, err
@@ -174,10 +194,12 @@ func (b *basicBus) Subscribe(evtTypes interface{}, opts ...event.SubscriptionOpt
 
 	if evtTypes == event.WildcardSubscription {
 		out := &wildcardSub{
-			ch: make(chan interface{}, settings.buffer),
-			w:  b.wildcard,
+			ch:            make(chan interface{}, settings.buffer),
+			w:             b.wildcard,
+			metricsTracer: b.metricsTracer,
+			name:          settings.name,
 		}
-		b.wildcard.addSink(out.ch)
+		b.wildcard.addSink(&namedSink{ch: out.ch, name: out.name})
 		return out, nil
 	}
 
@@ -198,7 +220,9 @@ func (b *basicBus) Subscribe(evtTypes interface{}, opts ...event.SubscriptionOpt
 		ch:    make(chan interface{}, settings.buffer),
 		nodes: make([]*node, len(types)),
 
-		dropper: b.tryDropNode,
+		dropper:       b.tryDropNode,
+		metricsTracer: b.metricsTracer,
+		name:          settings.name,
 	}
 
 	for _, etyp := range types {
@@ -211,8 +235,10 @@ func (b *basicBus) Subscribe(evtTypes interface{}, opts ...event.SubscriptionOpt
 		typ := reflect.TypeOf(etyp)
 
 		b.withNode(typ.Elem(), func(n *node) {
-			n.sinks = append(n.sinks, out.ch)
+			n.sinks = append(n.sinks, &namedSink{ch: out.ch, name: out.name})
 			out.nodes[i] = n
+
+			b.metricsTracer.AddSubscriber(typ.Elem())
 		}, func(n *node) {
 			if n.keepLast {
 				l := n.last
@@ -281,22 +307,25 @@ func (b *basicBus) GetAllEventTypes() []reflect.Type {
 
 type wildcardNode struct {
 	sync.RWMutex
-	nSinks int32
-	sinks  []chan interface{}
+	nSinks        int32
+	sinks         []*namedSink
+	metricsTracer MetricsTracer
 }
 
-func (n *wildcardNode) addSink(ch chan interface{}) {
+func (n *wildcardNode) addSink(sink *namedSink) {
 	atomic.AddInt32(&n.nSinks, 1) // ok to do outside the lock
 	n.Lock()
-	n.sinks = append(n.sinks, ch)
+	n.sinks = append(n.sinks, sink)
 	n.Unlock()
+
+	n.metricsTracer.AddSubscriber(reflect.TypeOf(event.WildcardSubscription))
 }
 
 func (n *wildcardNode) removeSink(ch chan interface{}) {
 	atomic.AddInt32(&n.nSinks, -1) // ok to do outside the lock
 	n.Lock()
 	for i := 0; i < len(n.sinks); i++ {
-		if n.sinks[i] == ch {
+		if n.sinks[i].ch == ch {
 			n.sinks[i], n.sinks[len(n.sinks)-1] = n.sinks[len(n.sinks)-1], nil
 			n.sinks = n.sinks[:len(n.sinks)-1]
 			break
@@ -311,8 +340,13 @@ func (n *wildcardNode) emit(evt interface{}) {
 	}
 
 	n.RLock()
-	for _, ch := range n.sinks {
-		ch <- evt
+	for _, sink := range n.sinks {
+
+		// Sending metrics before sending on channel allows us to
+		// record channel full events before blocking
+		sendSubscriberMetrics(n.metricsTracer, sink)
+
+		sink.ch <- evt
 	}
 	n.RUnlock()
 }
@@ -329,12 +363,14 @@ type node struct {
 	keepLast bool
 	last     interface{}
 
-	sinks []chan interface{}
+	sinks         []*namedSink
+	metricsTracer MetricsTracer
 }
 
-func newNode(typ reflect.Type) *node {
+func newNode(typ reflect.Type, metricsTracer MetricsTracer) *node {
 	return &node{
-		typ: typ,
+		typ:           typ,
+		metricsTracer: metricsTracer,
 	}
 }
 
@@ -349,8 +385,18 @@ func (n *node) emit(evt interface{}) {
 		n.last = evt
 	}
 
-	for _, ch := range n.sinks {
-		ch <- evt
+	for _, sink := range n.sinks {
+
+		// Sending metrics before sending on channel allows us to
+		// record channel full events before blocking
+		sendSubscriberMetrics(n.metricsTracer, sink)
+		sink.ch <- evt
 	}
 	n.lk.Unlock()
+}
+
+func sendSubscriberMetrics(metricsTracer MetricsTracer, sink *namedSink) {
+	metricsTracer.SubscriberQueueLength(sink.name, len(sink.ch)+1)
+	metricsTracer.SubscriberQueueFull(sink.name, len(sink.ch)+1 == cap(sink.ch))
+	metricsTracer.SubscriberEventQueued(sink.name)
 }
