@@ -10,7 +10,7 @@ type subSettings struct {
 	name   string
 }
 
-var subCnt atomic.Int64
+var subCnt int64
 
 var subSettingsDefault = subSettings{
 	buffer: 16,
@@ -18,7 +18,7 @@ var subSettingsDefault = subSettings{
 
 func newSubSettings() subSettings {
 	settings := subSettingsDefault
-	settings.name = fmt.Sprintf("subscriber-%d", subCnt.Add(1))
+	settings.name = fmt.Sprintf("subscriber-%d", atomic.AddInt64(&subCnt, 1))
 	return settings
 }
 
