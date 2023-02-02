@@ -64,6 +64,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -122,7 +123,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 2,
+      "id": 14,
       "options": {
         "legend": {
           "calcs": [],
@@ -141,30 +142,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "editorMode": "builder",
-          "expr": "sum by(event) (rate(libp2p_eventbus_events_emitted_total[1m]))",
+          "editorMode": "code",
+          "expr": "(sum by (subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_sum[5m])) / sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_count[5m]))) / (sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_event_queued[5m])))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "hide": false,
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "hide": false,
-          "refId": "C"
         }
       ],
-      "title": "Events emitted by type",
+      "title": "Subscriber Queue Wait Time",
       "type": "timeseries"
     },
     {
@@ -229,6 +214,99 @@
         "w": 12,
         "x": 12,
         "y": 0
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_sum[5m])) / sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_count[5m]))",
+          "hide": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Subscriber Queue Length",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
       },
       "id": 12,
       "options": {
@@ -319,7 +397,7 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
+        "x": 12,
         "y": 8
       },
       "id": 4,
@@ -342,105 +420,13 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by(event) (rate(libp2p_eventbus_notification_time_microseconds_sum[30s])) / sum by(event) (rate(libp2p_eventbus_notification_time_microseconds_count[30s]))",
+          "expr": "sum by(event) (rate(libp2p_eventbus_notification_time_microseconds_sum[5m])) / sum by(event) (rate(libp2p_eventbus_notification_time_microseconds_count[5m]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Notification Time(us)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
-      },
-      "id": 6,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "builder",
-          "expr": "min by(event) (libp2p_eventbus_num_subscribers)",
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Num Subscribers",
       "type": "timeseries"
     },
     {
@@ -600,7 +586,7 @@
         "x": 12,
         "y": 16
       },
-      "id": 8,
+      "id": 2,
       "options": {
         "legend": {
           "calcs": [],
@@ -619,15 +605,30 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "editorMode": "code",
-          "expr": "sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_sum[5m])) / sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_count[5m]))",
-          "hide": false,
+          "editorMode": "builder",
+          "expr": "sum by(event) (rate(libp2p_eventbus_events_emitted_total[1m]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "hide": false,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "hide": false,
+          "refId": "C"
         }
       ],
-      "title": "Subscriber Queue Length",
+      "title": "Events emitted by type",
       "type": "timeseries"
     },
     {
@@ -635,7 +636,6 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -694,7 +694,7 @@
         "x": 0,
         "y": 24
       },
-      "id": 14,
+      "id": 6,
       "options": {
         "legend": {
           "calcs": [],
@@ -713,14 +713,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "editorMode": "code",
-          "expr": "(sum by (subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_sum[5m])) / sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_count[5m]))) / (sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_event_queued[5m])))",
+          "editorMode": "builder",
+          "expr": "min by(event) (libp2p_eventbus_num_subscribers)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Subscriber Queue Wait Time",
+      "title": "Num Subscribers",
       "type": "timeseries"
     }
   ],
@@ -731,7 +731,7 @@
     "list": []
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-3h",
     "to": "now"
   },
   "timepicker": {},
