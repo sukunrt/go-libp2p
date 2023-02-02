@@ -3,6 +3,7 @@ package eventbus
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/event"
 )
@@ -23,5 +24,16 @@ func BenchmarkSubscriberQueueLength(b *testing.B) {
 	mt := NewMetricsTracer()
 	for i := 0; i < b.N; i++ {
 		mt.SubscriberQueueLength(names[i%len(names)], i)
+	}
+}
+
+func BenchmarkNotificationTime(b *testing.B) {
+	b.ReportAllocs()
+	types := []reflect.Type{reflect.TypeOf(new(event.EvtLocalAddressesUpdated)), reflect.TypeOf(new(event.EvtNATDeviceTypeChanged)),
+		reflect.TypeOf(new(event.EvtLocalProtocolsUpdated))}
+	mt := NewMetricsTracer()
+	for i := 0; i < b.N; i++ {
+		st := time.Now()
+		mt.NotificationTime(types[i%len(types)], time.Since(st))
 	}
 }

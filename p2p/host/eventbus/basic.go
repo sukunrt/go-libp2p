@@ -42,9 +42,11 @@ func (e *emitter) Emit(evt interface{}) error {
 	e.n.emit(evt)
 	e.w.emit(evt)
 
-	d := time.Since(st)
-	e.metricsTracer.EventEmitted(e.typ)
-	e.metricsTracer.NotificationTime(e.typ, d)
+	if e.metricsTracer != nil {
+		d := time.Since(st)
+		e.metricsTracer.EventEmitted(e.typ)
+		e.metricsTracer.NotificationTime(e.typ, d)
+	}
 	return nil
 }
 
@@ -59,11 +61,18 @@ func (e *emitter) Close() error {
 }
 
 func NewBus() event.Bus {
+	return &basicBus{
+		nodes:    map[reflect.Type]*node{},
+		wildcard: new(wildcardNode),
+	}
+}
+
+func NewBusWithMetrics() event.Bus {
 	metricsTracer := NewMetricsTracer()
-	wildcard := &wildcardNode{metricsTracer: metricsTracer}
+	wildcardNode := &wildcardNode{metricsTracer: metricsTracer}
 	return &basicBus{
 		nodes:         map[reflect.Type]*node{},
-		wildcard:      wildcard,
+		wildcard:      wildcardNode,
 		metricsTracer: metricsTracer,
 	}
 }
@@ -125,7 +134,9 @@ func (w *wildcardSub) Out() <-chan interface{} {
 
 func (w *wildcardSub) Close() error {
 	w.w.removeSink(w.ch)
-	w.metricsTracer.RemoveSubscriber(reflect.TypeOf(event.WildcardSubscription))
+	if w.metricsTracer != nil {
+		w.metricsTracer.RemoveSubscriber(reflect.TypeOf(event.WildcardSubscription))
+	}
 	return nil
 }
 
@@ -170,7 +181,9 @@ func (s *sub) Close() error {
 				n.sinks[i], n.sinks[len(n.sinks)-1] = n.sinks[len(n.sinks)-1], nil
 				n.sinks = n.sinks[:len(n.sinks)-1]
 
-				s.metricsTracer.RemoveSubscriber(n.typ)
+				if s.metricsTracer != nil {
+					s.metricsTracer.RemoveSubscriber(n.typ)
+				}
 				break
 			}
 		}
@@ -245,8 +258,9 @@ func (b *basicBus) Subscribe(evtTypes interface{}, opts ...event.SubscriptionOpt
 		b.withNode(typ.Elem(), func(n *node) {
 			n.sinks = append(n.sinks, &namedSink{ch: out.ch, name: out.name})
 			out.nodes[i] = n
-
-			b.metricsTracer.AddSubscriber(typ.Elem())
+			if b.metricsTracer != nil {
+				b.metricsTracer.AddSubscriber(typ.Elem())
+			}
 		}, func(n *node) {
 			if n.keepLast {
 				l := n.last
@@ -326,7 +340,9 @@ func (n *wildcardNode) addSink(sink *namedSink) {
 	n.sinks = append(n.sinks, sink)
 	n.Unlock()
 
-	n.metricsTracer.AddSubscriber(reflect.TypeOf(event.WildcardSubscription))
+	if n.metricsTracer != nil {
+		n.metricsTracer.AddSubscriber(reflect.TypeOf(event.WildcardSubscription))
+	}
 }
 
 func (n *wildcardNode) removeSink(ch chan interface{}) {
@@ -404,7 +420,9 @@ func (n *node) emit(evt interface{}) {
 }
 
 func sendSubscriberMetrics(metricsTracer MetricsTracer, sink *namedSink) {
-	metricsTracer.SubscriberQueueLength(sink.name, len(sink.ch)+1)
-	metricsTracer.SubscriberQueueFull(sink.name, len(sink.ch)+1 == cap(sink.ch))
-	metricsTracer.SubscriberEventQueued(sink.name)
+	if metricsTracer != nil {
+		metricsTracer.SubscriberQueueLength(sink.name, len(sink.ch)+1)
+		metricsTracer.SubscriberQueueFull(sink.name, len(sink.ch)+1 == cap(sink.ch))
+		metricsTracer.SubscriberEventQueued(sink.name)
+	}
 }

@@ -68,7 +68,7 @@ func NewBlankHost(n network.Network, options ...Option) *BlankHost {
 		mux:  mstream.NewMultistreamMuxer[protocol.ID](),
 	}
 	if bh.eventbus == nil {
-		bh.eventbus = eventbus.NewBus()
+		bh.eventbus = eventbus.NewBusWithMetrics()
 	}
 
 	// subscribe the connection manager to network notifications (has no effect with NullConnMgr)
