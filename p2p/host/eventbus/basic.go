@@ -129,6 +129,10 @@ func (w *wildcardSub) Close() error {
 	return nil
 }
 
+func (w *wildcardSub) Name() string {
+	return w.name
+}
+
 type namedSink struct {
 	name string
 	ch   chan interface{}
@@ -140,6 +144,10 @@ type sub struct {
 	dropper       func(reflect.Type)
 	metricsTracer MetricsTracer
 	name          string
+}
+
+func (s *sub) Name() string {
+	return s.name
 }
 
 func (s *sub) Out() <-chan interface{} {

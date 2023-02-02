@@ -192,7 +192,7 @@ func (ids *idService) loop() {
 	sub, err := ids.Host.EventBus().Subscribe([]interface{}{
 		&event.EvtLocalProtocolsUpdated{},
 		&event.EvtLocalAddressesUpdated{},
-	}, eventbus.BufSize(256))
+	}, eventbus.BufSize(256), eventbus.Name("id service"))
 	if err != nil {
 		log.Errorf("failed to subscribe to events on the bus, err=%s", err)
 		return

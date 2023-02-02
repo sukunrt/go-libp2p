@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/libp2p/go-libp2p/p2p/host/eventbus"
 	relayv2 "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay"
 
 	"github.com/libp2p/go-libp2p/core/event"
@@ -44,7 +45,7 @@ func (m *RelayManager) background(ctx context.Context) {
 		m.mutex.Unlock()
 	}()
 
-	subReachability, _ := m.host.EventBus().Subscribe(new(event.EvtLocalReachabilityChanged))
+	subReachability, _ := m.host.EventBus().Subscribe(new(event.EvtLocalReachabilityChanged), eventbus.Name("relay manager"))
 	defer subReachability.Close()
 
 	for {
