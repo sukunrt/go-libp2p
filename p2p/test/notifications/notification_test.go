@@ -61,6 +61,9 @@ func TestListenAddressNotif(t *testing.T) {
 		ev := e.(event.EvtLocalAddressesUpdated)
 		require.Empty(t, ev.Removed)
 		require.Len(t, ev.Current, 2)
+		if ev.Current[0].Action == event.Added {
+			ev.Current[0], ev.Current[1] = ev.Current[1], ev.Current[0]
+		}
 		require.Equal(t, ev.Current[0], event.UpdatedAddress{Address: initialAddr, Action: event.Maintained})
 		require.Equal(t, ev.Current[1].Action, event.Added)
 		newAddr = ev.Current[1].Address
