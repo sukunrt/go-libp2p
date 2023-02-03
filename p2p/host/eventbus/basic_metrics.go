@@ -106,19 +106,19 @@ func NewMetricsTracer() MetricsTracer {
 }
 
 func (m *metricsTracer) EventEmitted(typ reflect.Type) {
-	eventsEmitted.WithLabelValues(stripPrefix(typ.String())).Inc()
+	eventsEmitted.WithLabelValues(strings.TrimPrefix(typ.String(), "event.")).Inc()
 }
 
 func (m *metricsTracer) NotificationTime(typ reflect.Type, d time.Duration) {
-	notificationTime.WithLabelValues(stripPrefix(typ.String())).Observe(float64(d.Microseconds()))
+	notificationTime.WithLabelValues(strings.TrimPrefix(typ.String(), "event.")).Observe(float64(d.Microseconds()))
 }
 
 func (m *metricsTracer) AddSubscriber(typ reflect.Type) {
-	numSubscribers.WithLabelValues(stripPrefix(typ.String())).Inc()
+	numSubscribers.WithLabelValues(strings.TrimPrefix(typ.String(), "event.")).Inc()
 }
 
 func (m *metricsTracer) RemoveSubscriber(typ reflect.Type) {
-	numSubscribers.WithLabelValues(stripPrefix(typ.String())).Dec()
+	numSubscribers.WithLabelValues(strings.TrimPrefix(typ.String(), "event.")).Dec()
 }
 
 func (m *metricsTracer) SubscriberQueueLength(name string, n int) {
@@ -136,12 +136,4 @@ func (m *metricsTracer) SubscriberQueueFull(name string, isFull bool) {
 
 func (m *metricsTracer) SubscriberEventQueued(name string) {
 	subscriberEventQueued.WithLabelValues(name).Inc()
-}
-
-func stripPrefix(s string) string {
-	prefix := "event."
-	if strings.HasPrefix(s, prefix) {
-		return s[len(prefix):]
-	}
-	return s
 }

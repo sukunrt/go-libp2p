@@ -155,7 +155,7 @@ type HostOpts struct {
 
 // NewHost constructs a new *BasicHost and activates it by attaching its stream and connection handlers to the given inet.Network.
 func NewHost(n network.Network, opts *HostOpts) (*BasicHost, error) {
-	eventBus := eventbus.NewBusWithMetrics()
+	eventBus := eventbus.NewBus(eventbus.WithMetricsTracer(eventbus.NewMetricsTracer()))
 	psManager, err := pstoremanager.NewPeerstoreManager(n.Peerstore(), eventBus)
 	if err != nil {
 		return nil, err

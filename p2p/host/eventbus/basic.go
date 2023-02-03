@@ -60,21 +60,15 @@ func (e *emitter) Close() error {
 	return nil
 }
 
-func NewBus() event.Bus {
-	return &basicBus{
+func NewBus(opts ...Option) event.Bus {
+	bus := &basicBus{
 		nodes:    map[reflect.Type]*node{},
-		wildcard: new(wildcardNode),
+		wildcard: &wildcardNode{},
 	}
-}
-
-func NewBusWithMetrics() event.Bus {
-	metricsTracer := NewMetricsTracer()
-	wildcardNode := &wildcardNode{metricsTracer: metricsTracer}
-	return &basicBus{
-		nodes:         map[reflect.Type]*node{},
-		wildcard:      wildcardNode,
-		metricsTracer: metricsTracer,
+	for _, opt := range opts {
+		opt(bus)
 	}
+	return bus
 }
 
 func (b *basicBus) withNode(typ reflect.Type, cb func(*node), async func(*node)) {

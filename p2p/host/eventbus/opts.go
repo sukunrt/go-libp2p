@@ -51,3 +51,16 @@ func Stateful(s interface{}) error {
 	s.(*emitterSettings).makeStateful = true
 	return nil
 }
+
+type busSettings struct {
+	enableMetrics bool
+}
+
+type Option func(*basicBus)
+
+func WithMetricsTracer(metricsTracer MetricsTracer) Option {
+	return func(bus *basicBus) {
+		bus.metricsTracer = metricsTracer
+		bus.wildcard.metricsTracer = metricsTracer
+	}
+}
