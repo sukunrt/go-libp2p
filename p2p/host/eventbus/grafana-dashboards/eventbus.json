@@ -310,7 +310,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "libp2p_eventbus_num_subscribers",
+          "expr": "libp2p_eventbus_subscribers_total",
           "legendFormat": "{{event}}",
           "range": true,
           "refId": "A"
@@ -614,6 +614,6 @@
   "timezone": "",
   "title": "libp2p EventBus",
   "uid": "ZFbI6NAVk",
-  "version": 29,
+  "version": 30,
   "weekStart": ""
 }
