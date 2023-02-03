@@ -52,10 +52,6 @@ func Stateful(s interface{}) error {
 	return nil
 }
 
-type busSettings struct {
-	enableMetrics bool
-}
-
 type Option func(*basicBus)
 
 func WithMetricsTracer(metricsTracer MetricsTracer) Option {
