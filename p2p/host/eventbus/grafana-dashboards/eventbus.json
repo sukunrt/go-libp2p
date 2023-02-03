@@ -31,6 +31,12 @@
     },
     {
       "type": "panel",
+      "id": "state-timeline",
+      "name": "State timeline",
+      "version": ""
+    },
+    {
+      "type": "panel",
       "id": "timeseries",
       "name": "Time series",
       "version": ""
@@ -327,71 +333,60 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "continuous-GrYlRd"
           },
           "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "fillOpacity": 75,
+            "lineWidth": 0,
+            "spanNulls": 60000
           },
-          "mappings": [],
-          "max": 1.5,
-          "min": 0,
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "OK"
+                },
+                "1": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "FULL"
+                }
+              },
+              "type": "value"
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "#73BF69",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
-          }
+          },
+          "unit": "string"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 11,
+        "w": 23,
         "x": 0,
         "y": 13
       },
       "id": 10,
       "options": {
+        "alignValue": "center",
         "legend": {
-          "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
+        "mergeValues": true,
+        "rowHeight": 0.94,
+        "showValue": "always",
         "tooltip": {
           "mode": "single",
           "sort": "none"
@@ -404,14 +399,18 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
+          "exemplar": false,
           "expr": "libp2p_eventbus_subscriber_queue_full",
+          "format": "time_series",
+          "hide": false,
+          "instant": false,
           "legendFormat": "{{subscriber_name}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Subscriber Queue Full",
-      "type": "timeseries"
+      "type": "state-timeline"
     },
     {
       "datasource": {
@@ -473,8 +472,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 13
+        "x": 6,
+        "y": 24
       },
       "id": 8,
       "options": {
@@ -505,101 +504,9 @@
       ],
       "title": "Subscriber Queue Length",
       "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "description": "",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 21
-      },
-      "id": 14,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "(sum by (subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_sum[$__rate_interval])) / sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_count[$__rate_interval]))) / (sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_event_queued[$__rate_interval])))",
-          "legendFormat": "{{subscriber_name}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Subscriber Queue Wait Time",
-      "type": "timeseries"
     }
   ],
+  "refresh": false,
   "schemaVersion": 37,
   "style": "dark",
   "tags": [],
@@ -614,6 +521,6 @@
   "timezone": "",
   "title": "libp2p EventBus",
   "uid": "ZFbI6NAVk",
-  "version": 30,
+  "version": 32,
   "weekStart": ""
 }
