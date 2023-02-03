@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/libp2p/go-libp2p/core/event"
 )
@@ -37,15 +36,12 @@ func (e *emitter) Emit(evt interface{}) error {
 	if atomic.LoadInt32(&e.closed) != 0 {
 		return fmt.Errorf("emitter is closed")
 	}
-	st := time.Now()
 
 	e.n.emit(evt)
 	e.w.emit(evt)
 
 	if e.metricsTracer != nil {
-		d := time.Since(st)
 		e.metricsTracer.EventEmitted(e.typ)
-		e.metricsTracer.NotificationTime(e.typ, d)
 	}
 	return nil
 }

@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -20,19 +19,10 @@ var (
 		},
 		[]string{"event"},
 	)
-	notificationTime = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Namespace: metricNamespace,
-			Name:      "notification_time_microseconds",
-			Help:      "Time taken to notify all subscribers",
-			Buckets:   prometheus.ExponentialBuckets(1.0, 2, 10),
-		},
-		[]string{"event"},
-	)
-	numSubscribers = prometheus.NewGaugeVec(
+	totalSubscribers = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
-			Name:      "num_subscribers",
+			Name:      "subscribers_total",
 			Help:      "Number of subscribers for an event type",
 		},
 		[]string{"event"},
@@ -70,10 +60,6 @@ type MetricsTracer interface {
 	// EventEmitted counts the total number of events grouped by event type
 	EventEmitted(typ reflect.Type)
 
-	// NotificationTime is the time taken from calling Emit to the time it
-	// took to push the message to all subscriber channels
-	NotificationTime(typ reflect.Type, d time.Duration)
-
 	// AddSubscriber adds a subscriber for the event type
 	AddSubscriber(typ reflect.Type)
 
@@ -97,7 +83,7 @@ var _ MetricsTracer = &metricsTracer{}
 var initMetricsOnce sync.Once
 
 func initMetrics() {
-	prometheus.MustRegister(eventsEmitted, notificationTime, numSubscribers, subscriberQueueLength, subscriberQueueFull, subscriberEventQueued)
+	prometheus.MustRegister(eventsEmitted, totalSubscribers, subscriberQueueLength, subscriberQueueFull, subscriberEventQueued)
 }
 
 func NewMetricsTracer() MetricsTracer {
@@ -109,16 +95,12 @@ func (m *metricsTracer) EventEmitted(typ reflect.Type) {
 	eventsEmitted.WithLabelValues(strings.TrimPrefix(typ.String(), "event.")).Inc()
 }
 
-func (m *metricsTracer) NotificationTime(typ reflect.Type, d time.Duration) {
-	notificationTime.WithLabelValues(strings.TrimPrefix(typ.String(), "event.")).Observe(float64(d.Microseconds()))
-}
-
 func (m *metricsTracer) AddSubscriber(typ reflect.Type) {
-	numSubscribers.WithLabelValues(strings.TrimPrefix(typ.String(), "event.")).Inc()
+	totalSubscribers.WithLabelValues(strings.TrimPrefix(typ.String(), "event.")).Inc()
 }
 
 func (m *metricsTracer) RemoveSubscriber(typ reflect.Type) {
-	numSubscribers.WithLabelValues(strings.TrimPrefix(typ.String(), "event.")).Dec()
+	totalSubscribers.WithLabelValues(strings.TrimPrefix(typ.String(), "event.")).Dec()
 }
 
 func (m *metricsTracer) SubscriberQueueLength(name string, n int) {
