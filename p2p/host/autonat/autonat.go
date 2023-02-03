@@ -119,8 +119,8 @@ func New(h host.Host, options ...Option) (AutoNAT, error) {
 	}
 	as.status.Store(autoNATResult{network.ReachabilityUnknown, nil})
 
-	subscriber, err := as.host.EventBus().Subscribe([]interface{}{new(event.EvtLocalAddressesUpdated), new(event.EvtPeerIdentificationCompleted)},
-		eventbus.Name("autonat"))
+	subscriber, err := as.host.EventBus().Subscribe([]interface{}{new(event.EvtLocalAddressesUpdated), new(event.EvtPeerIdentificationCompleted)})
+
 	if err != nil {
 		return nil, err
 	}

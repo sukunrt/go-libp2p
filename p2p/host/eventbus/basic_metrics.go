@@ -25,7 +25,7 @@ var (
 			Namespace: metricNamespace,
 			Name:      "notification_time_microseconds",
 			Help:      "Time taken to notify all subscribers",
-			Buckets:   prometheus.ExponentialBuckets(1.0, 10.0, 7),
+			Buckets:   prometheus.ExponentialBuckets(1.0, 2, 10),
 		},
 		[]string{"event"},
 	)
