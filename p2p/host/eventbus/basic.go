@@ -412,7 +412,7 @@ func (n *node) emit(evt interface{}) {
 func sendSubscriberMetrics(metricsTracer MetricsTracer, sink *namedSink) {
 	if metricsTracer != nil {
 		metricsTracer.SubscriberQueueLength(sink.name, len(sink.ch)+1)
-		metricsTracer.SubscriberQueueFull(sink.name, len(sink.ch)+1 == cap(sink.ch))
+		metricsTracer.SubscriberQueueFull(sink.name, len(sink.ch)+1 >= cap(sink.ch))
 		metricsTracer.SubscriberEventQueued(sink.name)
 	}
 }

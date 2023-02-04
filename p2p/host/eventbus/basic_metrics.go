@@ -27,12 +27,11 @@ var (
 		},
 		[]string{"event"},
 	)
-	subscriberQueueLength = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
+	subscriberQueueLength = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
 			Name:      "subscriber_queue_length",
 			Help:      "Subscriber queue length",
-			Buckets:   prometheus.ExponentialBuckets(1.0, 2.0, 10),
 		},
 		[]string{"subscriber_name"},
 	)
@@ -80,14 +79,30 @@ type metricsTracer struct{}
 
 var _ MetricsTracer = &metricsTracer{}
 
-var initMetricsOnce sync.Once
+type MetricsTracerOption = func(*metricsTracerSetting)
 
-func initMetrics() {
-	prometheus.MustRegister(eventsEmitted, totalSubscribers, subscriberQueueLength, subscriberQueueFull, subscriberEventQueued)
+type metricsTracerSetting struct {
+	reg prometheus.Registerer
 }
 
-func NewMetricsTracer() MetricsTracer {
-	initMetricsOnce.Do(initMetrics)
+var initMetricsOnce sync.Once
+
+func initMetrics(reg prometheus.Registerer) {
+	reg.MustRegister(eventsEmitted, totalSubscribers, subscriberQueueLength, subscriberQueueFull, subscriberEventQueued)
+}
+
+func MustRegisterWith(reg prometheus.Registerer) MetricsTracerOption {
+	return func(s *metricsTracerSetting) {
+		s.reg = reg
+	}
+}
+
+func NewMetricsTracer(opts ...MetricsTracerOption) MetricsTracer {
+	settings := &metricsTracerSetting{reg: prometheus.DefaultRegisterer}
+	for _, opt := range opts {
+		opt(settings)
+	}
+	initMetricsOnce.Do(func() { initMetrics(settings.reg) })
 	return &metricsTracer{}
 }
 
@@ -104,7 +119,7 @@ func (m *metricsTracer) RemoveSubscriber(typ reflect.Type) {
 }
 
 func (m *metricsTracer) SubscriberQueueLength(name string, n int) {
-	subscriberQueueLength.WithLabelValues(name).Observe(float64(n))
+	subscriberQueueLength.WithLabelValues(name).Set(float64(n))
 }
 
 func (m *metricsTracer) SubscriberQueueFull(name string, isFull bool) {

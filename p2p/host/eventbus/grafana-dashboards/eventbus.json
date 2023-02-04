@@ -494,10 +494,10 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "editorMode": "code",
-          "expr": "sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_sum[$__rate_interval])) / sum by(subscriber_name) (rate(libp2p_eventbus_subscriber_queue_length_count[$__rate_interval]))",
+          "editorMode": "builder",
+          "expr": "libp2p_eventbus_subscriber_queue_length",
           "hide": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{subscriber_name}}",
           "range": true,
           "refId": "A"
         }
@@ -521,6 +521,6 @@
   "timezone": "",
   "title": "libp2p EventBus",
   "uid": "ZFbI6NAVk",
-  "version": 32,
+  "version": 35,
   "weekStart": ""
 }
