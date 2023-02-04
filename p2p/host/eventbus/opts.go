@@ -25,7 +25,14 @@ func newSubSettings() subSettings {
 	_, file, line, ok := runtime.Caller(2) // skip=1 is eventbus.Subscriber
 	if ok {
 		file = strings.TrimPrefix(file, "github.com/")
-		settings.name = fmt.Sprintf("sub-%s-L%d", file, line)
+		// remove the version number from the path, for example
+		// go-libp2p-package@v0.x.y-some-hash-123/file.go will be shortened go go-libp2p-package/file.go
+		if idx1 := strings.Index(file, "@"); idx1 != -1 {
+			if idx2 := strings.Index(file[idx1:], "/"); idx2 != -1 {
+				file = file[:idx1] + file[idx1+idx2:]
+			}
+		}
+		settings.name = fmt.Sprintf("%s-L%d", file, line)
 	} else {
 		settings.name = fmt.Sprintf("subscriber-%d", atomic.AddInt64(&subCnt, 1))
 	}
