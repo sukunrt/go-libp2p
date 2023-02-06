@@ -10,9 +10,22 @@ import (
 	"github.com/benbjohnson/clock"
 )
 
+// AutoRelay will call this function when it needs new candidates because it is
+// not connected to the desired number of relays or we get disconnected from one
+// of the relays. Implementations must send *at most* numPeers, and close the
+// channel when they don't intend to provide any more peers. AutoRelay will not
+// call the callback again until the channel is closed. Implementations should
+// send new peers, but may send peers they sent before. AutoRelay implements a
+// per-peer backoff (see WithBackoff). See WithMinInterval for setting the
+// minimum interval between calls to the callback. The context.Context passed
+// MAY be canceled when AutoRelay feels satisfied, it will be canceled when the
+// node is shutting down. If the channel is canceled you MUST close the output
+// channel at some point.
+type PeerSource func(ctx context.Context, num int) <-chan peer.AddrInfo
+
 type config struct {
 	clock      clock.Clock
-	peerSource func(ctx context.Context, num int) <-chan peer.AddrInfo
+	peerSource PeerSource
 	// minimum interval used to call the peerSource callback
 	minInterval time.Duration
 	// see WithMinCandidates
@@ -76,17 +89,7 @@ func WithStaticRelays(static []peer.AddrInfo) Option {
 }
 
 // WithPeerSource defines a callback for AutoRelay to query for more relay candidates.
-// AutoRelay will call this function when it needs new candidates because it is not connected
-// to the desired number of relays or we get disconnected from one of the relays.
-// Implementations must send *at most* numPeers, and close the channel when they don't intend to provide
-// any more peers.
-// AutoRelay will not call the callback again until the channel is closed.
-// Implementations should send new peers, but may send peers they sent before. AutoRelay implements
-// a per-peer backoff (see WithBackoff).
-// See WithMinInterval for setting the minimum interval between calls to the callback.
-// The context.Context passed MAY be canceled when AutoRelay feels satisfied, it will be canceled when the node is shutting down.
-// If the channel is canceled you MUST close the output channel at some point.
-func WithPeerSource(f func(ctx context.Context, numPeers int) <-chan peer.AddrInfo) Option {
+func WithPeerSource(f PeerSource) Option {
 	return func(c *config) error {
 		if c.peerSource != nil {
 			return errAlreadyHavePeerSource

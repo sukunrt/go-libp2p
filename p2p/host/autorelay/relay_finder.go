@@ -59,7 +59,7 @@ type relayFinder struct {
 	ctxCancel   context.CancelFunc
 	ctxCancelMx sync.Mutex
 
-	peerSource func(context.Context, int) <-chan peer.AddrInfo
+	peerSource PeerSource
 
 	candidateFound             chan struct{} // receives every time we find a new relay candidate
 	candidateMx                sync.Mutex
@@ -82,7 +82,7 @@ type relayFinder struct {
 	cachedAddrsExpiry time.Time
 }
 
-func newRelayFinder(host *basic.BasicHost, peerSource func(context.Context, int) <-chan peer.AddrInfo, conf *config) *relayFinder {
+func newRelayFinder(host *basic.BasicHost, peerSource PeerSource, conf *config) *relayFinder {
 	if peerSource == nil {
 		panic("Can not create a new relayFinder. Need a Peer Source fn or a list of static relays. Refer to the documentation around `libp2p.EnableAutoRelay`")
 	}

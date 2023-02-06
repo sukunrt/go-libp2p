@@ -4,7 +4,6 @@ package libp2p
 // those are in defaults.go).
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
@@ -331,12 +330,12 @@ func EnableAutoRelayWithStaticRelays(static []peer.AddrInfo, opts ...autorelay.O
 	}
 }
 
-// EnableAutoRelayWithPeerSource configures libp2p to enable the AutoRelay subsystem using
-// the provided peerSource callback to get more relay candidates.
-// This subsystem performs automatic address rewriting to advertise relay addresses when it
-// detects that the node is publicly unreachable (e.g. behind a NAT).
-func EnableAutoRelayWithPeerSource(peerSource func(context.Context, int) <-chan peer.AddrInfo,
-	opts ...autorelay.Option) Option {
+// EnableAutoRelayWithPeerSource configures libp2p to enable the AutoRelay
+// subsystem using the provided PeerSource callback to get more relay
+// candidates.  This subsystem performs automatic address rewriting to advertise
+// relay addresses when it detects that the node is publicly unreachable (e.g.
+// behind a NAT).
+func EnableAutoRelayWithPeerSource(peerSource autorelay.PeerSource, opts ...autorelay.Option) Option {
 	return func(cfg *Config) error {
 		cfg.EnableAutoRelay = true
 		cfg.AutoRelayOpts = append([]autorelay.Option{autorelay.WithPeerSource(peerSource)}, opts...)
