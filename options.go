@@ -320,7 +320,7 @@ func EnableAutoRelay(opts ...autorelay.Option) Option {
 }
 
 // EnableAutoRelayWithStaticRelays configures libp2p to enable the AutoRelay subsystem using
-// the provided slice of relays as relay candidates
+// the provided relays as relay candidates.
 // This subsystem performs automatic address rewriting to advertise relay addresses when it
 // detects that the node is publicly unreachable (e.g. behind a NAT).
 func EnableAutoRelayWithStaticRelays(static []peer.AddrInfo, opts ...autorelay.Option) Option {
@@ -332,14 +332,14 @@ func EnableAutoRelayWithStaticRelays(static []peer.AddrInfo, opts ...autorelay.O
 }
 
 // EnableAutoRelayWithPeerSource configures libp2p to enable the AutoRelay subsystem using
-// the provided peerSource callback to get more relay candidates
+// the provided peerSource callback to get more relay candidates.
 // This subsystem performs automatic address rewriting to advertise relay addresses when it
 // detects that the node is publicly unreachable (e.g. behind a NAT).
 func EnableAutoRelayWithPeerSource(peerSource func(context.Context, int) <-chan peer.AddrInfo,
 	opts ...autorelay.Option) Option {
 	return func(cfg *Config) error {
 		cfg.EnableAutoRelay = true
-		cfg.AutoRelayOpts = append([]autorelay.Option{autorelay.WithPeerSource(peerSource, 30*time.Second)}, opts...)
+		cfg.AutoRelayOpts = append([]autorelay.Option{autorelay.WithPeerSource(peerSource)}, opts...)
 		return nil
 	}
 }
