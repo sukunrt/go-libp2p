@@ -19,7 +19,7 @@ import (
 // per-peer backoff (see WithBackoff). See WithMinInterval for setting the
 // minimum interval between calls to the callback. The context.Context passed
 // MAY be canceled when AutoRelay feels satisfied, it will be canceled when the
-// node is shutting down. If the channel is canceled you MUST close the output
+// node is shutting down. If the context is canceled you MUST close the output
 // channel at some point.
 type PeerSource func(ctx context.Context, num int) <-chan peer.AddrInfo
 
