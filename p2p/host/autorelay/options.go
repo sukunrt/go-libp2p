@@ -18,7 +18,7 @@ import (
 // send new peers, but may send peers they sent before. AutoRelay implements a
 // per-peer backoff (see WithBackoff). See WithMinInterval for setting the
 // minimum interval between calls to the callback. The context.Context passed
-// MAY be canceled when AutoRelay feels satisfied, it will be canceled when the
+// may be canceled when AutoRelay feels satisfied, it will be canceled when the
 // node is shutting down. If the context is canceled you MUST close the output
 // channel at some point.
 type PeerSource func(ctx context.Context, num int) <-chan peer.AddrInfo
