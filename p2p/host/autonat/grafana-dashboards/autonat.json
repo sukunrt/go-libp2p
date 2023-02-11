@@ -352,7 +352,7 @@
                                         },
                                         "editorMode": "code",
                                         "exemplar": false,
-                                        "expr": "sum by(response_status) (increase(libp2p_autonat_client_dialresponse_total[$__rate_interval]))",
+                                        "expr": "increase(libp2p_autonat_client_dialresponse_total[$__rate_interval])",
                                         "instant": false,
                                         "legendFormat": "{{response_status}}",
                                         "range": true,
@@ -460,9 +460,9 @@
                                                 "type": "prometheus",
                                                 "uid": "${DS_PROMETHEUS}"
                                         },
-                                        "editorMode": "builder",
-                                        "expr": "sum by(refusal_reason) (increase(libp2p_autonat_server_dialrefused_total[$__rate_interval]))",
-                                        "legendFormat": "__auto",
+                                        "editorMode": "code",
+                                        "expr": "increase(libp2p_autonat_server_dialrefused_total[$__rate_interval])",
+                                        "legendFormat": "{{refusal_reason}}",
                                         "range": true,
                                         "refId": "A"
                                 }
@@ -628,9 +628,9 @@
                                                 "type": "prometheus",
                                                 "uid": "${DS_PROMETHEUS}"
                                         },
-                                        "editorMode": "builder",
-                                        "expr": "sum by(response_status) (increase(libp2p_autonat_server_dialresponse_total[$__rate_interval]))",
-                                        "legendFormat": "__auto",
+                                        "editorMode": "code",
+                                        "expr": "increase(libp2p_autonat_server_dialresponse_total[$__rate_interval])",
+                                        "legendFormat": "{{response_status}}",
                                         "range": true,
                                         "refId": "A"
                                 }
@@ -653,6 +653,6 @@
         "timezone": "",
         "title": "libp2p autonat",
         "uid": "YNWSyiJ4k",
-        "version": 18,
+        "version": 19,
         "weekStart": ""
 }
