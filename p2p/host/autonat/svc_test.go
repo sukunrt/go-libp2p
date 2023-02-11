@@ -38,7 +38,7 @@ func makeAutoNATService(t *testing.T, c *config) *autoNATService {
 
 func makeAutoNATClient(t *testing.T) (host.Host, Client) {
 	h := bhost.NewBlankHost(swarmt.GenSwarm(t))
-	cli := NewAutoNATClient(h, nil)
+	cli := NewAutoNATClient(h, nil, nil)
 	return h, cli
 }
 

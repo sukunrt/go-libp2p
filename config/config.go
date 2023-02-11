@@ -354,6 +354,7 @@ func (cfg *Config) NewNode() (host.Host, error) {
 		autonat.UsingAddresses(func() []ma.Multiaddr {
 			return addrF(h.AllAddrs())
 		}),
+		autonat.WithMetricsTracer(autonat.NewMetricsTracer()),
 	}
 	if cfg.AutoNATConfig.ThrottleInterval != 0 {
 		autonatOpts = append(autonatOpts,
