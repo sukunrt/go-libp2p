@@ -57,10 +57,10 @@ var initMetricsOnce sync.Once
 func initMetrics(reg prometheus.Registerer) {
 	reg.MustRegister(
 		reachabilityStatus,
+		reachabilityStatusConfidence,
 		clientDialResponseTotal,
 		serverDialResponseTotal,
 		serverDialRefusedTotal,
-		reachabilityStatusConfidence,
 	)
 }
 
@@ -101,6 +101,8 @@ type metricsTracerSetting struct {
 
 type metricsTracer struct {
 }
+
+var _ MetricsTracer = &metricsTracer{}
 
 func (mt *metricsTracer) ReachabilityStatus(status network.Reachability) {
 	reachabilityStatus.Set(float64(status))
