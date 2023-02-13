@@ -600,12 +600,12 @@ func TestFlowControlWindowIncrease(t *testing.T) {
 	require.NoError(t, err)
 	str, err := conn.OpenStream(context.Background())
 	require.NoError(t, err)
-	var increasesDone uint32 // to be used atomically
+	var increasesDone atomic.Bool
 	go func() {
 		for {
 			_, err := str.Write(bytes.Repeat([]byte{0x42}, 1<<10))
 			require.NoError(t, err)
-			if atomic.LoadUint32(&increasesDone) > 0 {
+			if increasesDone.Load() {
 				str.CloseWrite()
 				return
 			}
@@ -631,7 +631,7 @@ func TestFlowControlWindowIncrease(t *testing.T) {
 			t.Fatalf("didn't receive enough window increases (client: %d, server: %d)", numClientIncreases, numServerIncreases)
 		}
 		if numClientIncreases >= 1 && numServerIncreases >= 1 {
-			atomic.AddUint32(&increasesDone, 1)
+			increasesDone.Store(true)
 			break
 		}
 	}

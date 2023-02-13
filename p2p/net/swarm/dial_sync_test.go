@@ -162,7 +162,7 @@ func TestDialSyncAllCancel(t *testing.T) {
 }
 
 func TestFailFirst(t *testing.T) {
-	var count int32
+	var handledFirst atomic.Bool
 	dialErr := fmt.Errorf("gophers ate the modem")
 	f := func(p peer.ID, reqch <-chan dialRequest) {
 		go func() {
@@ -172,7 +172,7 @@ func TestFailFirst(t *testing.T) {
 					return
 				}
 
-				if atomic.CompareAndSwapInt32(&count, 0, 1) {
+				if handledFirst.CompareAndSwap(false, true) {
 					req.resch <- dialResponse{err: dialErr}
 				} else {
 					req.resch <- dialResponse{conn: new(Conn)}

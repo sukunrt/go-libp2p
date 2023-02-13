@@ -27,13 +27,13 @@ type emitter struct {
 	n             *node
 	w             *wildcardNode
 	typ           reflect.Type
-	closed        int32
+	closed        atomic.Bool
 	dropper       func(reflect.Type)
 	metricsTracer MetricsTracer
 }
 
 func (e *emitter) Emit(evt interface{}) error {
-	if atomic.LoadInt32(&e.closed) != 0 {
+	if e.closed.Load() {
 		return fmt.Errorf("emitter is closed")
 	}
 
@@ -47,7 +47,7 @@ func (e *emitter) Emit(evt interface{}) error {
 }
 
 func (e *emitter) Close() error {
-	if !atomic.CompareAndSwapInt32(&e.closed, 0, 1) {
+	if !e.closed.CompareAndSwap(false, true) {
 		return fmt.Errorf("closed an emitter more than once")
 	}
 	if atomic.AddInt32(&e.n.nEmitters, -1) == 0 {

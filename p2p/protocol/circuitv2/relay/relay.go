@@ -41,7 +41,7 @@ var log = logging.Logger("relay")
 
 // Relay is the (limited) relay service object.
 type Relay struct {
-	closed uint32
+	closed atomic.Bool
 	ctx    context.Context
 	cancel func()
 
@@ -104,7 +104,7 @@ func New(h host.Host, opts ...Option) (*Relay, error) {
 }
 
 func (r *Relay) Close() error {
-	if atomic.CompareAndSwapUint32(&r.closed, 0, 1) {
+	if r.closed.CompareAndSwap(false, true) {
 		r.host.RemoveStreamHandler(proto.ProtoIDv2Hop)
 		r.scope.Done()
 		r.cancel()

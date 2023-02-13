@@ -37,7 +37,7 @@ const (
 )
 
 type Relay struct {
-	closed int32
+	closed atomic.Bool
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -83,7 +83,7 @@ func NewRelay(h host.Host, opts ...Option) (*Relay, error) {
 }
 
 func (r *Relay) Close() error {
-	if atomic.CompareAndSwapInt32(&r.closed, 0, 1) {
+	if r.closed.CompareAndSwap(false, true) {
 		r.host.RemoveStreamHandler(ProtoID)
 		r.scope.Done()
 		r.cancel()
