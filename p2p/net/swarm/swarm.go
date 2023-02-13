@@ -146,7 +146,7 @@ type Swarm struct {
 	maResolver *madns.Resolver
 
 	// stream handlers
-	streamh atomic.Value
+	streamh atomic.Pointer[network.StreamHandler]
 
 	// dialing helpers
 	dsync   *dialSync
@@ -347,13 +347,16 @@ func (s *Swarm) Peerstore() peerstore.Peerstore {
 
 // SetStreamHandler assigns the handler for new streams.
 func (s *Swarm) SetStreamHandler(handler network.StreamHandler) {
-	s.streamh.Store(handler)
+	s.streamh.Store(&handler)
 }
 
 // StreamHandler gets the handler for new streams.
 func (s *Swarm) StreamHandler() network.StreamHandler {
-	handler, _ := s.streamh.Load().(network.StreamHandler)
-	return handler
+	handler := s.streamh.Load()
+	if handler == nil {
+		return nil
+	}
+	return *handler
 }
 
 // NewStream creates a new stream on any available connection to peer, dialing

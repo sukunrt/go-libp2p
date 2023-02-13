@@ -31,7 +31,7 @@ type stream struct {
 
 	writeErr error
 
-	protocol atomic.Value
+	protocol atomic.Pointer[protocol.ID]
 	stat     network.Stats
 }
 
@@ -92,9 +92,11 @@ func (s *stream) ID() string {
 }
 
 func (s *stream) Protocol() protocol.ID {
-	// Ignore type error. It means that the protocol is unset.
-	p, _ := s.protocol.Load().(protocol.ID)
-	return p
+	p := s.protocol.Load()
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func (s *stream) Stat() network.Stats {
@@ -102,7 +104,7 @@ func (s *stream) Stat() network.Stats {
 }
 
 func (s *stream) SetProtocol(proto protocol.ID) error {
-	s.protocol.Store(proto)
+	s.protocol.Store(&proto)
 	return nil
 }
 

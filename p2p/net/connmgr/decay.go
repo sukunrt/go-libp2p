@@ -38,7 +38,7 @@ type decayer struct {
 	knownTags map[string]*decayingTag
 
 	// lastTick stores the last time the decayer ticked. Guarded by atomic.
-	lastTick atomic.Value
+	lastTick atomic.Pointer[time.Time]
 
 	// bumpTagCh queues bump commands to be processed by the loop.
 	bumpTagCh   chan bumpCmd
@@ -89,7 +89,8 @@ func NewDecayer(cfg *DecayerCfg, mgr *BasicConnMgr) (*decayer, error) {
 		doneCh:      make(chan struct{}),
 	}
 
-	d.lastTick.Store(d.clock.Now())
+	now := d.clock.Now()
+	d.lastTick.Store(&now)
 
 	// kick things off.
 	go d.process()
@@ -116,7 +117,7 @@ func (d *decayer) RegisterDecayingTag(name string, interval time.Duration, decay
 			"some precision may be lost", name, interval, d.cfg.Resolution)
 	}
 
-	lastTick := d.lastTick.Load().(time.Time)
+	lastTick := d.lastTick.Load()
 	tag := &decayingTag{
 		trkr:     d,
 		name:     name,
@@ -163,7 +164,8 @@ func (d *decayer) process() {
 	for {
 		select {
 		case now = <-ticker.C:
-			d.lastTick.Store(now)
+			nn := now
+			d.lastTick.Store(&nn)
 
 			d.tagsMu.Lock()
 			for _, tag := range d.knownTags {
