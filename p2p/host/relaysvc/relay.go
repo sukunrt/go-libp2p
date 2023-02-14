@@ -65,14 +65,18 @@ func (m *RelayManager) background(ctx context.Context) {
 func (m *RelayManager) reachabilityChanged(r network.Reachability) error {
 	switch r {
 	case network.ReachabilityPublic:
+		m.mutex.Lock()
+		defer m.mutex.Unlock()
+		// ignore events with no reachability change
+		if m.relay != nil {
+			return nil
+		}
 		relay, err := relayv2.New(m.host, m.opts...)
 		if err != nil {
 			return err
 		}
-		m.mutex.Lock()
-		defer m.mutex.Unlock()
 		m.relay = relay
-	case network.ReachabilityPrivate:
+	default:
 		m.mutex.Lock()
 		defer m.mutex.Unlock()
 		if m.relay != nil {
