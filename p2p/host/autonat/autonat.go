@@ -286,10 +286,18 @@ func (as *AmbientAutoNAT) scheduleProbe() time.Duration {
 // Update the current status based on an observed result.
 func (as *AmbientAutoNAT) recordObservation(observation autoNATResult) {
 	currentStatus := as.status.Load()
+
+	// Ignore public observations with no address
+	if observation.Reachability == network.ReachabilityPublic && observation.address == nil {
+		return
+	}
+
 	if observation.Reachability == network.ReachabilityPublic {
 		log.Debugf("NAT status is public")
 		changed := false
 		if currentStatus.Reachability != network.ReachabilityPublic {
+			// Aggressively switch to public from other states ignoring confidence
+
 			// we are flipping our NATStatus, so confidence drops to 0
 			as.confidence = 0
 			if as.service != nil {
@@ -299,21 +307,13 @@ func (as *AmbientAutoNAT) recordObservation(observation autoNATResult) {
 		} else if as.confidence < 3 {
 			as.confidence++
 		}
-		if observation.address != nil {
-			if !changed && currentStatus.address != nil && !observation.address.Equal(currentStatus.address) {
-				as.confidence--
-			}
-			if currentStatus.address == nil || !observation.address.Equal(currentStatus.address) {
-				changed = true
-			}
-			as.status.Store(&observation)
-		}
-		if observation.address != nil && changed {
+		as.status.Store(&observation)
+		if changed {
 			as.emitStatus()
 		}
 	} else if observation.Reachability == network.ReachabilityPrivate {
 		log.Debugf("NAT status is private")
-		if currentStatus.Reachability == network.ReachabilityPublic {
+		if currentStatus.Reachability != network.ReachabilityPrivate {
 			if as.confidence > 0 {
 				as.confidence--
 			} else {
@@ -328,9 +328,6 @@ func (as *AmbientAutoNAT) recordObservation(observation autoNATResult) {
 		} else if as.confidence < 3 {
 			as.confidence++
 			as.status.Store(&observation)
-			if currentStatus.Reachability != network.ReachabilityPrivate {
-				as.emitStatus()
-			}
 		}
 	} else if as.confidence > 0 {
 		// don't just flip to unknown, reduce confidence first
