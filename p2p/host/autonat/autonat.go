@@ -286,64 +286,62 @@ func (as *AmbientAutoNAT) scheduleProbe() time.Duration {
 // Update the current status based on an observed result.
 func (as *AmbientAutoNAT) recordObservation(observation autoNATResult) {
 	currentStatus := as.status.Load().(autoNATResult)
-	if observation.Reachability == network.ReachabilityPublic {
-		log.Debugf("NAT status is public")
-		changed := false
+	reachabilityChanged := false
+	addrChanged := false
+	switch observation.Reachability {
+	case network.ReachabilityPublic:
 		if currentStatus.Reachability != network.ReachabilityPublic {
-			// we are flipping our NATStatus, so confidence drops to 0
-			as.confidence = 0
-			if as.service != nil {
-				as.service.Enable()
-			}
-			changed = true
-		} else if as.confidence < 3 {
-			as.confidence++
-		}
-		if observation.address != nil {
-			if !changed && currentStatus.address != nil && !observation.address.Equal(currentStatus.address) {
+			if as.confidence == 0 {
+				reachabilityChanged = true
+			} else {
 				as.confidence--
+			}
+		} else {
+			if as.confidence < 3 {
+				as.confidence++
 			}
 			if currentStatus.address == nil || !observation.address.Equal(currentStatus.address) {
-				changed = true
+				addrChanged = true
 			}
-			as.status.Store(observation)
 		}
-		if observation.address != nil && changed {
-			as.emitStatus()
-		}
-	} else if observation.Reachability == network.ReachabilityPrivate {
-		log.Debugf("NAT status is private")
-		if currentStatus.Reachability == network.ReachabilityPublic {
-			if as.confidence > 0 {
-				as.confidence--
+	case network.ReachabilityPrivate:
+		if currentStatus.Reachability != network.ReachabilityPrivate {
+			if as.confidence == 0 {
+				reachabilityChanged = true
 			} else {
-				// we are flipping our NATStatus, so confidence drops to 0
-				as.confidence = 0
-				as.status.Store(observation)
-				if as.service != nil {
-					as.service.Disable()
-				}
-				as.emitStatus()
+				as.confidence--
 			}
-		} else if as.confidence < 3 {
-			as.confidence++
-			as.status.Store(observation)
-			if currentStatus.Reachability != network.ReachabilityPrivate {
-				as.emitStatus()
+		} else {
+			if as.confidence < 3 {
+				as.confidence++
 			}
 		}
-	} else if as.confidence > 0 {
-		// don't just flip to unknown, reduce confidence first
-		as.confidence--
-	} else {
-		log.Debugf("NAT status is unknown")
-		as.status.Store(autoNATResult{network.ReachabilityUnknown, nil})
+	case network.ReachabilityUnknown:
 		if currentStatus.Reachability != network.ReachabilityUnknown {
+			if as.confidence == 0 {
+				reachabilityChanged = true
+			} else {
+				as.confidence--
+			}
+		}
+	}
+
+	// Keep the latest address
+	if addrChanged || reachabilityChanged {
+		as.status.Store(observation)
+	}
+	if reachabilityChanged {
+		switch observation.Reachability {
+		case network.ReachabilityPublic, network.ReachabilityUnknown:
 			if as.service != nil {
 				as.service.Enable()
 			}
-			as.emitStatus()
+		case network.ReachabilityPrivate:
+			if as.service != nil {
+				as.service.Disable()
+			}
 		}
+		as.emitStatus()
 	}
 }
 
