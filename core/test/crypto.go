@@ -7,11 +7,11 @@ import (
 	ci "github.com/libp2p/go-libp2p/core/crypto"
 )
 
-var globalSeed int64
+var globalSeed atomic.Int64
 
 func RandTestKeyPair(typ, bits int) (ci.PrivKey, ci.PubKey, error) {
 	// workaround for low time resolution
-	seed := atomic.AddInt64(&globalSeed, 1)
+	seed := globalSeed.Add(1)
 	return SeededTestKeyPair(typ, bits, seed)
 }
 

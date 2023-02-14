@@ -377,11 +377,11 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
 
 	log.Infof("relaying connection from %s to %s", src, dest.ID)
 
-	goroutines := new(int32)
-	*goroutines = 2
+	var goroutines atomic.Int32
+	goroutines.Store(2)
 
 	done := func() {
-		if atomic.AddInt32(goroutines, -1) == 0 {
+		if goroutines.Add(-1) == 0 {
 			s.Close()
 			bs.Close()
 			cleanup()

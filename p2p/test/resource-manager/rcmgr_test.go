@@ -265,10 +265,10 @@ func TestResourceManagerServicePeerInbound(t *testing.T) {
 
 func waitForBarrier(count int32, timeout time.Duration) func() error {
 	ready := make(chan struct{})
-	wait := new(int32)
-	*wait = count
+	var wait atomic.Int32
+	wait.Store(count)
 	return func() error {
-		if atomic.AddInt32(wait, -1) == 0 {
+		if wait.Add(-1) == 0 {
 			close(ready)
 		}
 

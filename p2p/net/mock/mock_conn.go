@@ -14,7 +14,7 @@ import (
 	manet "github.com/multiformats/go-multiaddr/net"
 )
 
-var connCounter int64
+var connCounter atomic.Int64
 
 // conn represents one side's perspective of a
 // live connection between two peers.
@@ -49,7 +49,7 @@ func newConn(ln, rn *peernet, l *link, dir network.Direction) *conn {
 	c.local = ln.peer
 	c.remote = rn.peer
 	c.stat.Direction = dir
-	c.id = atomic.AddInt64(&connCounter, 1)
+	c.id = connCounter.Add(1)
 
 	c.localAddr = ln.ps.Addrs(ln.peer)[0]
 	for _, a := range rn.ps.Addrs(rn.peer) {

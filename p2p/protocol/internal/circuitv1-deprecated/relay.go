@@ -54,8 +54,8 @@ type Relay struct {
 	incoming chan *Conn
 
 	// atomic counters
-	streamCount  int32
-	liveHopCount int32
+	streamCount  atomic.Int32
+	liveHopCount atomic.Int32
 
 	// per peer hop counters
 	mx       sync.Mutex
@@ -130,7 +130,7 @@ func NewRelay(h host.Host, upgrader transport.Upgrader, opts ...RelayOpt) (*Rela
 // sides of the hop stream. This ensures that connections with many hop streams will be protected
 // from pruning, thus minimizing disruption from connection trimming in a relay node.
 func (r *Relay) addLiveHop(from, to peer.ID) {
-	atomic.AddInt32(&r.liveHopCount, 1)
+	r.liveHopCount.Add(1)
 	r.host.ConnManager().UpsertTag(from, "relay-hop-stream", incrementTag)
 	r.host.ConnManager().UpsertTag(to, "relay-hop-stream", incrementTag)
 }
@@ -138,14 +138,14 @@ func (r *Relay) addLiveHop(from, to peer.ID) {
 // Decrement the live hpo count and decrement the connection manager tags for the two sides
 // of the hop stream.
 func (r *Relay) rmLiveHop(from, to peer.ID) {
-	atomic.AddInt32(&r.liveHopCount, -1)
+	r.liveHopCount.Add(-1)
 	r.host.ConnManager().UpsertTag(from, "relay-hop-stream", decrementTag)
 	r.host.ConnManager().UpsertTag(to, "relay-hop-stream", decrementTag)
 
 }
 
 func (r *Relay) GetActiveHops() int32 {
-	return atomic.LoadInt32(&r.liveHopCount)
+	return r.liveHopCount.Load()
 }
 
 func (r *Relay) DialPeer(ctx context.Context, relay peer.AddrInfo, dest peer.AddrInfo) (*Conn, error) {
@@ -280,9 +280,9 @@ func (r *Relay) handleHopStream(s network.Stream, msg *pb.CircuitRelay) {
 		return
 	}
 
-	streamCount := atomic.AddInt32(&r.streamCount, 1)
-	liveHopCount := atomic.LoadInt32(&r.liveHopCount)
-	defer atomic.AddInt32(&r.streamCount, -1)
+	streamCount := r.streamCount.Add(1)
+	liveHopCount := r.liveHopCount.Load()
+	defer r.streamCount.Add(-1)
 
 	if (streamCount + liveHopCount) > int32(HopStreamLimit) {
 		log.Warn("hop stream limit exceeded; resetting stream")
@@ -391,10 +391,10 @@ func (r *Relay) handleHopStream(s network.Stream, msg *pb.CircuitRelay) {
 
 	r.addLiveHop(src.ID, dst.ID)
 
-	goroutines := new(int32)
-	*goroutines = 2
+	var goroutines atomic.Int32
+	goroutines.Store(2)
 	done := func() {
-		if atomic.AddInt32(goroutines, -1) == 0 {
+		if goroutines.Add(-1) == 0 {
 			s.Close()
 			bs.Close()
 			r.rmLiveHop(src.ID, dst.ID)

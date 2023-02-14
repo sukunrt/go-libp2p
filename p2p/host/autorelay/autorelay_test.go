@@ -251,17 +251,17 @@ func TestBackoff(t *testing.T) {
 	)
 	require.NoError(t, err)
 	defer r.Close()
-	var reservations int32
+	var reservations atomic.Int32
 	r.SetStreamHandler(protoIDv2, func(str network.Stream) {
-		atomic.AddInt32(&reservations, 1)
+		reservations.Add(1)
 		str.Reset()
 	})
 
-	var counter int32 // to be used atomically
+	var counter atomic.Int32
 	h := newPrivateNode(t,
 		func(context.Context, int) <-chan peer.AddrInfo {
 			// always return the same node, and make sure we don't try to connect to it too frequently
-			atomic.AddInt32(&counter, 1)
+			counter.Add(1)
 			peerChan := make(chan peer.AddrInfo, 1)
 			peerChan <- peer.AddrInfo{ID: r.ID(), Addrs: r.Addrs()}
 			close(peerChan)
@@ -275,16 +275,16 @@ func TestBackoff(t *testing.T) {
 	)
 	defer h.Close()
 
-	require.Eventually(t, func() bool { return atomic.LoadInt32(&reservations) == 1 }, 3*time.Second, 20*time.Millisecond)
+	require.Eventually(t, func() bool { return reservations.Load() == 1 }, 3*time.Second, 20*time.Millisecond)
 	// make sure we don't add any relays yet
 	for i := 0; i < 2; i++ {
 		cl.Add(backoff / 3)
-		require.Equal(t, 1, int(atomic.LoadInt32(&reservations)))
+		require.Equal(t, 1, int(reservations.Load()))
 	}
 	cl.Add(backoff / 2)
-	require.Eventually(t, func() bool { return atomic.LoadInt32(&reservations) == 2 }, 3*time.Second, 20*time.Millisecond)
-	require.Less(t, int(atomic.LoadInt32(&counter)), 100) // just make sure we're not busy-looping
-	require.Equal(t, 2, int(atomic.LoadInt32(&reservations)))
+	require.Eventually(t, func() bool { return reservations.Load() == 2 }, 3*time.Second, 20*time.Millisecond)
+	require.Less(t, int(counter.Load()), 100) // just make sure we're not busy-looping
+	require.Equal(t, 2, int(reservations.Load()))
 }
 
 func TestStaticRelays(t *testing.T) {

@@ -198,7 +198,7 @@ func TestClosingRaces(t *testing.T) {
 func TestSubMany(t *testing.T) {
 	bus := NewBus()
 
-	var r int32
+	var r atomic.Int32
 
 	n := getN()
 	var wait sync.WaitGroup
@@ -215,7 +215,7 @@ func TestSubMany(t *testing.T) {
 			defer sub.Close()
 
 			ready.Done()
-			atomic.AddInt32(&r, int32((<-sub.Out()).(EventB)))
+			r.Add(int32((<-sub.Out()).(EventB)))
 			wait.Done()
 		}()
 	}
@@ -231,7 +231,7 @@ func TestSubMany(t *testing.T) {
 	em.Emit(EventB(7))
 	wait.Wait()
 
-	if int(r) != 7*n {
+	if int(r.Load()) != 7*n {
 		t.Error("got wrong result")
 	}
 }
@@ -488,7 +488,7 @@ func testMany(t testing.TB, subs, emits, msgs int, stateful bool) {
 
 	bus := NewBus()
 
-	var r int64
+	var r atomic.Int64
 
 	var wait sync.WaitGroup
 	var ready sync.WaitGroup
@@ -509,7 +509,7 @@ func testMany(t testing.TB, subs, emits, msgs int, stateful bool) {
 				if !ok {
 					panic("wat")
 				}
-				atomic.AddInt64(&r, int64(e.(EventB)))
+				r.Add(int64(e.(EventB)))
 			}
 			wait.Done()
 		}()
@@ -538,7 +538,7 @@ func testMany(t testing.TB, subs, emits, msgs int, stateful bool) {
 
 	wait.Wait()
 
-	if int(r) != 97*subs*emits*msgs {
+	if int(r.Load()) != 97*subs*emits*msgs {
 		t.Fatal("got wrong result")
 	}
 }

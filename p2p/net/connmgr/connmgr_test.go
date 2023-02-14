@@ -367,7 +367,7 @@ func TestDoubleConnection(t *testing.T) {
 	not.Connected(nil, conn)
 	cm.TagPeer(conn.RemotePeer(), "foo", 10)
 	not.Connected(nil, conn)
-	if cm.connCount != 1 {
+	if cm.connCount.Load() != 1 {
 		t.Fatal("unexpected number of connections")
 	}
 	if cm.segments.get(conn.RemotePeer()).peers[conn.RemotePeer()].value != 10 {
@@ -386,7 +386,7 @@ func TestDisconnected(t *testing.T) {
 	cm.TagPeer(conn.RemotePeer(), "foo", 10)
 
 	not.Disconnected(nil, randConn(t, nil))
-	if cm.connCount != 1 {
+	if cm.connCount.Load() != 1 {
 		t.Fatal("unexpected number of connections")
 	}
 	if cm.segments.get(conn.RemotePeer()).peers[conn.RemotePeer()].value != 10 {
@@ -394,7 +394,7 @@ func TestDisconnected(t *testing.T) {
 	}
 
 	not.Disconnected(nil, &tconn{peer: conn.RemotePeer()})
-	if cm.connCount != 1 {
+	if cm.connCount.Load() != 1 {
 		t.Fatal("unexpected number of connections")
 	}
 	if cm.segments.get(conn.RemotePeer()).peers[conn.RemotePeer()].value != 10 {
@@ -402,7 +402,7 @@ func TestDisconnected(t *testing.T) {
 	}
 
 	not.Disconnected(nil, conn)
-	if cm.connCount != 0 {
+	if cm.connCount.Load() != 0 {
 		t.Fatal("unexpected number of connections")
 	}
 	if cm.segments.countPeers() != 0 {
@@ -495,7 +495,7 @@ func TestQuickBurstRespectsSilencePeriod(t *testing.T) {
 	if closed > 20 {
 		t.Fatalf("should have closed at most 20 connections, closed: %d", closed)
 	}
-	if total := closed + int(cm.connCount); total != 30 {
+	if total := closed + int(cm.connCount.Load()); total != 30 {
 		t.Fatalf("expected closed connections + open conn count to equal 30, value: %d", total)
 	}
 }

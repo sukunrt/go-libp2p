@@ -309,10 +309,10 @@ func (r *Relay) handleHopStream(s network.Stream, msg *pb.CircuitRelay) {
 	// reset deadline
 	bs.SetDeadline(time.Time{})
 
-	goroutines := new(int32)
-	*goroutines = 2
+	var goroutines atomic.Int32
+	goroutines.Store(2)
 	done := func() {
-		if atomic.AddInt32(goroutines, -1) == 0 {
+		if goroutines.Add(-1) == 0 {
 			s.Close()
 			bs.Close()
 			cleanup()

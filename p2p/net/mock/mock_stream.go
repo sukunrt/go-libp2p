@@ -13,7 +13,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
-var streamCounter int64
+var streamCounter atomic.Int64
 
 // stream implements network.Stream
 type stream struct {
@@ -57,7 +57,7 @@ func newStream(w *io.PipeWriter, r *io.PipeReader, dir network.Direction) *strea
 	s := &stream{
 		read:      r,
 		write:     w,
-		id:        atomic.AddInt64(&streamCounter, 1),
+		id:        streamCounter.Add(1),
 		reset:     make(chan struct{}, 1),
 		close:     make(chan struct{}, 1),
 		closed:    make(chan struct{}),
