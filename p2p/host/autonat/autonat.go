@@ -287,11 +287,6 @@ func (as *AmbientAutoNAT) scheduleProbe() time.Duration {
 func (as *AmbientAutoNAT) recordObservation(observation autoNATResult) {
 	currentStatus := as.status.Load()
 
-	// Ignore public observations with no address
-	if observation.Reachability == network.ReachabilityPublic && observation.address == nil {
-		return
-	}
-
 	if observation.Reachability == network.ReachabilityPublic {
 		log.Debugf("NAT status is public")
 		changed := false

@@ -209,19 +209,6 @@ func TestAutoNATObservationRecording(t *testing.T) {
 		t.Fatalf("failed to subscribe to event EvtLocalRoutabilityPublic, err=%s", err)
 	}
 
-	// pubic observation without address should be ignored.
-	an.recordObservation(autoNATResult{network.ReachabilityPublic, nil})
-	if an.Status() != network.ReachabilityUnknown {
-		t.Fatalf("unexpected transition")
-	}
-
-	select {
-	case <-s.Out():
-		t.Fatal("not expecting a public reachability event")
-	default:
-		// expected
-	}
-
 	addr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
 	an.recordObservation(autoNATResult{network.ReachabilityPublic, addr})
 	if an.Status() != network.ReachabilityPublic {
