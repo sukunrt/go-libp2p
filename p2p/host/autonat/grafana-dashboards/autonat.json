@@ -213,7 +213,7 @@
                                                 "uid": "${DS_PROMETHEUS}"
                                         },
                                         "editorMode": "builder",
-                                        "expr": "libp2p_autonat_reachability_status_confidnce",
+                                        "expr": "libp2p_autonat_reachability_status_confidence",
                                         "legendFormat": "__auto",
                                         "range": true,
                                         "refId": "A"
@@ -359,7 +359,7 @@
                                         "refId": "A"
                                 }
                         ],
-                        "title": "Client: DialResponse by Type",
+                        "title": "Received Dial Responses",
                         "type": "timeseries"
                 },
                 {

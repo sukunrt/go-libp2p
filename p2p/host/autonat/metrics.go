@@ -2,6 +2,7 @@ package autonat
 
 import (
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/p2p/host/autonat/pb"
@@ -22,33 +23,40 @@ var (
 	reachabilityStatusConfidence = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
-			Name:      "reachability_status_confidnce",
+			Name:      "reachability_status_confidence",
 			Help:      "Node reachability status confidence",
 		},
 	)
-	clientDialResponseTotal = prometheus.NewCounterVec(
+	receivedDialResponseTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "client_dialresponse_total",
+			Name:      "received_dial_response_total",
 			Help:      "Count of dial responses for client",
 		},
 		[]string{"response_status"},
 	)
-	serverDialResponseTotal = prometheus.NewCounterVec(
+	outgoingDialResponseTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "server_dialresponse_total",
+			Name:      "outgoing_dial_response_total",
 			Help:      "Count of dial responses for server",
 		},
 		[]string{"response_status"},
 	)
-	serverDialRefusedTotal = prometheus.NewCounterVec(
+	outgoingDialRefusedTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "server_dialrefused_total",
+			Name:      "outgoing_dial_refused_total",
 			Help:      "Count of dial requests refused by server",
 		},
 		[]string{"refusal_reason"},
+	)
+	nextProbeTimestamp = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "next_probe_timestamp",
+			Help:      "Time of next probe",
+		},
 	)
 )
 
@@ -58,18 +66,20 @@ func initMetrics(reg prometheus.Registerer) {
 	reg.MustRegister(
 		reachabilityStatus,
 		reachabilityStatusConfidence,
-		clientDialResponseTotal,
-		serverDialResponseTotal,
-		serverDialRefusedTotal,
+		receivedDialResponseTotal,
+		outgoingDialResponseTotal,
+		outgoingDialRefusedTotal,
+		nextProbeTimestamp,
 	)
 }
 
 type MetricsTracer interface {
 	ReachabilityStatus(status network.Reachability)
 	ReachabilityStatusConfidence(confidence int)
-	ClientDialResponse(status pb.Message_ResponseStatus)
-	ServerDialResponse(status pb.Message_ResponseStatus)
-	ServerDialRefused(reason string)
+	ReceivedDialResponse(status pb.Message_ResponseStatus)
+	OutgoingDialResponse(status pb.Message_ResponseStatus)
+	OutgoingDialRefused(reason string)
+	NextProbeTime(t time.Time)
 }
 
 func getResponseStatus(status pb.Message_ResponseStatus) string {
@@ -92,7 +102,9 @@ func getResponseStatus(status pb.Message_ResponseStatus) string {
 }
 
 const (
-	RATE_LIMIT = "rate limit"
+	rate_limited     = "rate limited"
+	dial_blocked     = "dial blocked"
+	no_valid_address = "no valid address"
 )
 
 type metricsTracerSetting struct {
@@ -112,25 +124,29 @@ func (mt *metricsTracer) ReachabilityStatusConfidence(confidence int) {
 	reachabilityStatusConfidence.Set(float64(confidence))
 }
 
-func (mt *metricsTracer) ClientDialResponse(status pb.Message_ResponseStatus) {
+func (mt *metricsTracer) ReceivedDialResponse(status pb.Message_ResponseStatus) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
 	*tags = append(*tags, getResponseStatus(status))
-	clientDialResponseTotal.WithLabelValues(*tags...).Inc()
+	receivedDialResponseTotal.WithLabelValues(*tags...).Inc()
 }
 
-func (mt *metricsTracer) ServerDialResponse(status pb.Message_ResponseStatus) {
+func (mt *metricsTracer) OutgoingDialResponse(status pb.Message_ResponseStatus) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
 	*tags = append(*tags, getResponseStatus(status))
-	serverDialResponseTotal.WithLabelValues(*tags...).Inc()
+	outgoingDialResponseTotal.WithLabelValues(*tags...).Inc()
 }
 
-func (mt *metricsTracer) ServerDialRefused(reason string) {
+func (mt *metricsTracer) OutgoingDialRefused(reason string) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
 	*tags = append(*tags, reason)
-	serverDialRefusedTotal.WithLabelValues(*tags...).Inc()
+	outgoingDialRefusedTotal.WithLabelValues(*tags...).Inc()
+}
+
+func (mt *metricsTracer) NextProbeTime(t time.Time) {
+	nextProbeTimestamp.Set(float64(t.Unix()))
 }
 
 type MetricsTracerOption = func(*metricsTracerSetting)

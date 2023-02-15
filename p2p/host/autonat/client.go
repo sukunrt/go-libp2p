@@ -81,7 +81,7 @@ func (c *client) DialBack(ctx context.Context, p peer.ID) (ma.Multiaddr, error) 
 
 	status := res.GetDialResponse().GetStatus()
 	if c.mt != nil {
-		c.mt.ClientDialResponse(status)
+		c.mt.ReceivedDialResponse(status)
 	}
 	switch status {
 	case pb.Message_OK:

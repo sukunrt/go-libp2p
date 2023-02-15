@@ -282,7 +282,9 @@ func (as *AmbientAutoNAT) scheduleProbe() time.Duration {
 			nextProbe = as.lastProbe.Add(untilNext)
 		}
 	}
-
+	if as.metricsTracer != nil {
+		as.metricsTracer.NextProbeTime(nextProbe)
+	}
 	return nextProbe.Sub(fixedNow)
 }
 
