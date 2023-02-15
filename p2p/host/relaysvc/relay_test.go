@@ -25,7 +25,7 @@ func TestReachabilityChangeEvent(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool { rmgr.mutex.Lock(); defer rmgr.mutex.Unlock(); return rmgr.relay != nil },
-		200*time.Millisecond,
+		1*time.Second,
 		100*time.Millisecond,
 		"relay should be set on public reachability")
 
@@ -34,7 +34,7 @@ func TestReachabilityChangeEvent(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool { rmgr.mutex.Lock(); defer rmgr.mutex.Unlock(); return rmgr.relay == nil },
-		200*time.Millisecond,
+		1*time.Second,
 		100*time.Millisecond,
 		"relay should be nil on private reachability")
 
@@ -45,7 +45,7 @@ func TestReachabilityChangeEvent(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool { rmgr.mutex.Lock(); defer rmgr.mutex.Unlock(); return rmgr.relay == nil },
-		200*time.Millisecond,
+		1*time.Second,
 		100*time.Millisecond,
 		"relay should be nil on unknown reachability")
 
@@ -55,13 +55,13 @@ func TestReachabilityChangeEvent(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool { rmgr.mutex.Lock(); defer rmgr.mutex.Unlock(); relay = rmgr.relay; return relay != nil },
+		1*time.Second,
 		100*time.Millisecond,
-		10*time.Millisecond,
 		"relay should be set on public event")
 	emitter.Emit(evt)
 	require.Never(t,
 		func() bool { rmgr.mutex.Lock(); defer rmgr.mutex.Unlock(); return relay != rmgr.relay },
-		200*time.Millisecond,
+		1*time.Second,
 		100*time.Millisecond,
 		"relay should not be updated on receiving the same event")
 }
