@@ -67,7 +67,8 @@ func (m *RelayManager) reachabilityChanged(r network.Reachability) error {
 	case network.ReachabilityPublic:
 		m.mutex.Lock()
 		defer m.mutex.Unlock()
-		// ignore events with no reachability change
+		// This could happen if two consecutive EvtLocalReachabilityChanged report the same reachability.
+		// This shouldn't happen, but it's safer to double-check.
 		if m.relay != nil {
 			return nil
 		}
