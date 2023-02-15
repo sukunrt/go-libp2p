@@ -246,12 +246,8 @@ func TestAutoNATObservationRecording(t *testing.T) {
 		t.Fatalf("reachability should stay public")
 	}
 	select {
-	case e := <-s.Out():
-		_, ok := e.(event.EvtLocalReachabilityChanged)
-		if ok {
-			t.Fatal("received event without state transition")
-		}
-
+	case <-s.Out():
+		t.Fatal("received event without state transition")
 	case <-time.After(1 * time.Second):
 	}
 }
