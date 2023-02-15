@@ -31,6 +31,12 @@
                 },
                 {
                         "type": "panel",
+                        "id": "stat",
+                        "name": "Stat",
+                        "version": ""
+                },
+                {
+                        "type": "panel",
                         "id": "state-timeline",
                         "name": "State timeline",
                         "version": ""
@@ -101,7 +107,7 @@
                                                                         "text": "Public"
                                                                 },
                                                                 "2": {
-                                                                        "color": "red",
+                                                                        "color": "purple",
                                                                         "index": 2,
                                                                         "text": "Private"
                                                                 }
@@ -170,6 +176,8 @@
                                                 "mode": "thresholds"
                                         },
                                         "mappings": [],
+                                        "max": 3,
+                                        "min": 0,
                                         "thresholds": {
                                                 "mode": "absolute",
                                                 "steps": [
@@ -182,7 +190,8 @@
                                                                 "value": 80
                                                         }
                                                 ]
-                                        }
+                                        },
+                                        "unit": "none"
                                 },
                                 "overrides": []
                         },
@@ -221,6 +230,72 @@
                         ],
                         "title": "Reachability status confidence",
                         "type": "gauge"
+                },
+                {
+                        "datasource": {
+                                "type": "prometheus",
+                                "uid": "${DS_PROMETHEUS}"
+                        },
+                        "fieldConfig": {
+                                "defaults": {
+                                        "color": {
+                                                "fixedColor": "green",
+                                                "mode": "fixed"
+                                        },
+                                        "mappings": [],
+                                        "thresholds": {
+                                                "mode": "absolute",
+                                                "steps": [
+                                                        {
+                                                                "color": "green",
+                                                                "value": null
+                                                        }
+                                                ]
+                                        },
+                                        "unit": "dateTimeAsLocalNoDateIfToday"
+                                },
+                                "overrides": []
+                        },
+                        "gridPos": {
+                                "h": 3,
+                                "w": 14,
+                                "x": 5,
+                                "y": 6
+                        },
+                        "id": 12,
+                        "options": {
+                                "colorMode": "value",
+                                "graphMode": "area",
+                                "justifyMode": "auto",
+                                "orientation": "auto",
+                                "reduceOptions": {
+                                        "calcs": [
+                                                "lastNotNull"
+                                        ],
+                                        "fields": "/^Value$/",
+                                        "values": false
+                                },
+                                "textMode": "auto"
+                        },
+                        "pluginVersion": "9.3.2",
+                        "targets": [
+                                {
+                                        "datasource": {
+                                                "type": "prometheus",
+                                                "uid": "${DS_PROMETHEUS}"
+                                        },
+                                        "editorMode": "code",
+                                        "exemplar": false,
+                                        "expr": "libp2p_autonat_next_probe_timestamp * 1000",
+                                        "format": "table",
+                                        "instant": true,
+                                        "legendFormat": "__auto",
+                                        "range": false,
+                                        "refId": "A"
+                                }
+                        ],
+                        "title": "Next Probe Time",
+                        "type": "stat"
                 },
                 {
                         "datasource": {
@@ -287,7 +362,7 @@
                                                         {
                                                                 "id": "color",
                                                                 "value": {
-                                                                        "fixedColor": "red",
+                                                                        "fixedColor": "purple",
                                                                         "mode": "fixed"
                                                                 }
                                                         }
@@ -329,7 +404,7 @@
                                 "h": 9,
                                 "w": 24,
                                 "x": 0,
-                                "y": 6
+                                "y": 9
                         },
                         "id": 4,
                         "options": {
@@ -352,7 +427,7 @@
                                         },
                                         "editorMode": "code",
                                         "exemplar": false,
-                                        "expr": "increase(libp2p_autonat_client_dialresponse_total[$__rate_interval])",
+                                        "expr": "increase(libp2p_autonat_received_dial_response_total[$__rate_interval])",
                                         "instant": false,
                                         "legendFormat": "{{response_status}}",
                                         "range": true,
@@ -421,13 +496,43 @@
                                         {
                                                 "matcher": {
                                                         "id": "byName",
-                                                        "options": "rate limit"
+                                                        "options": "dial refused"
                                                 },
                                                 "properties": [
                                                         {
                                                                 "id": "color",
                                                                 "value": {
-                                                                        "fixedColor": "red",
+                                                                        "fixedColor": "yellow",
+                                                                        "mode": "fixed"
+                                                                }
+                                                        }
+                                                ]
+                                        },
+                                        {
+                                                "matcher": {
+                                                        "id": "byName",
+                                                        "options": "dial error"
+                                                },
+                                                "properties": [
+                                                        {
+                                                                "id": "color",
+                                                                "value": {
+                                                                        "fixedColor": "purple",
+                                                                        "mode": "fixed"
+                                                                }
+                                                        }
+                                                ]
+                                        },
+                                        {
+                                                "matcher": {
+                                                        "id": "byName",
+                                                        "options": "OK"
+                                                },
+                                                "properties": [
+                                                        {
+                                                                "id": "color",
+                                                                "value": {
+                                                                        "fixedColor": "green",
                                                                         "mode": "fixed"
                                                                 }
                                                         }
@@ -436,12 +541,12 @@
                                 ]
                         },
                         "gridPos": {
-                                "h": 8,
-                                "w": 12,
+                                "h": 9,
+                                "w": 24,
                                 "x": 0,
-                                "y": 15
+                                "y": 18
                         },
-                        "id": 8,
+                        "id": 6,
                         "options": {
                                 "legend": {
                                         "calcs": [],
@@ -461,13 +566,13 @@
                                                 "uid": "${DS_PROMETHEUS}"
                                         },
                                         "editorMode": "code",
-                                        "expr": "increase(libp2p_autonat_server_dialrefused_total[$__rate_interval])",
-                                        "legendFormat": "{{refusal_reason}}",
+                                        "expr": "increase(libp2p_autonat_outgoing_dial_response_total[$__rate_interval])",
+                                        "legendFormat": "{{response_status}}",
                                         "range": true,
                                         "refId": "A"
                                 }
                         ],
-                        "title": "Server: Dial requests rate limited",
+                        "title": "Outgoing Dial Responses",
                         "type": "timeseries"
                 },
                 {
@@ -529,73 +634,13 @@
                                         {
                                                 "matcher": {
                                                         "id": "byName",
-                                                        "options": "dial refused"
-                                                },
-                                                "properties": [
-                                                        {
-                                                                "id": "color",
-                                                                "value": {
-                                                                        "fixedColor": "yellow",
-                                                                        "mode": "fixed"
-                                                                }
-                                                        }
-                                                ]
-                                        },
-                                        {
-                                                "matcher": {
-                                                        "id": "byName",
-                                                        "options": "ok"
-                                                },
-                                                "properties": [
-                                                        {
-                                                                "id": "color",
-                                                                "value": {
-                                                                        "fixedColor": "green",
-                                                                        "mode": "fixed"
-                                                                }
-                                                        }
-                                                ]
-                                        },
-                                        {
-                                                "matcher": {
-                                                        "id": "byName",
-                                                        "options": "Dial Error"
+                                                        "options": "rate limited"
                                                 },
                                                 "properties": [
                                                         {
                                                                 "id": "color",
                                                                 "value": {
                                                                         "fixedColor": "red",
-                                                                        "mode": "fixed"
-                                                                }
-                                                        }
-                                                ]
-                                        },
-                                        {
-                                                "matcher": {
-                                                        "id": "byName",
-                                                        "options": "dial error"
-                                                },
-                                                "properties": [
-                                                        {
-                                                                "id": "color",
-                                                                "value": {
-                                                                        "fixedColor": "red",
-                                                                        "mode": "fixed"
-                                                                }
-                                                        }
-                                                ]
-                                        },
-                                        {
-                                                "matcher": {
-                                                        "id": "byName",
-                                                        "options": "OK"
-                                                },
-                                                "properties": [
-                                                        {
-                                                                "id": "color",
-                                                                "value": {
-                                                                        "fixedColor": "green",
                                                                         "mode": "fixed"
                                                                 }
                                                         }
@@ -604,12 +649,12 @@
                                 ]
                         },
                         "gridPos": {
-                                "h": 8,
-                                "w": 12,
-                                "x": 12,
-                                "y": 15
+                                "h": 10,
+                                "w": 24,
+                                "x": 0,
+                                "y": 27
                         },
-                        "id": 6,
+                        "id": 14,
                         "options": {
                                 "legend": {
                                         "calcs": [],
@@ -629,13 +674,13 @@
                                                 "uid": "${DS_PROMETHEUS}"
                                         },
                                         "editorMode": "code",
-                                        "expr": "increase(libp2p_autonat_server_dialresponse_total[$__rate_interval])",
-                                        "legendFormat": "{{response_status}}",
+                                        "expr": "increase(libp2p_autonat_outgoing_dial_refused_total[$__rate_interval])",
+                                        "legendFormat": "{{refusal_reason}}",
                                         "range": true,
                                         "refId": "A"
                                 }
                         ],
-                        "title": "server: DialResponse By Type",
+                        "title": "Outgoing Dial Refused",
                         "type": "timeseries"
                 }
         ],
@@ -653,6 +698,6 @@
         "timezone": "",
         "title": "libp2p autonat",
         "uid": "YNWSyiJ4k",
-        "version": 19,
+        "version": 16,
         "weekStart": ""
 }
