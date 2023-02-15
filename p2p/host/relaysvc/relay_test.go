@@ -2,28 +2,42 @@ package relaysvc
 
 import (
 	"testing"
+	"time"
 
+	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/network"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/blank"
+	"github.com/libp2p/go-libp2p/p2p/host/eventbus"
 	swarmt "github.com/libp2p/go-libp2p/p2p/net/swarm/testing"
+	relayv2 "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay"
 	"github.com/stretchr/testify/require"
 )
 
 func TestReachabilityChangeEvent(t *testing.T) {
 	h := bhost.NewBlankHost(swarmt.GenSwarm(t))
 	rmgr := NewRelayManager(h)
-	rmgr.reachabilityChanged(network.ReachabilityPublic)
-	require.NotNil(t, rmgr.relay, "relay should be set on public reachability")
+	emitter, err := rmgr.host.EventBus().Emitter(new(event.EvtLocalReachabilityChanged), eventbus.Stateful)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evt := event.EvtLocalReachabilityChanged{Reachability: network.ReachabilityPublic}
+	emitter.Emit(evt)
+	require.Eventually(t, func() bool { return rmgr.relay != nil }, 100*time.Millisecond, 10*time.Millisecond, "relay should be set on public reachability")
 
-	rmgr.reachabilityChanged(network.ReachabilityPrivate)
-	require.Nil(t, rmgr.relay, "relay should be nil on private reachability")
+	evt = event.EvtLocalReachabilityChanged{Reachability: network.ReachabilityPrivate}
+	emitter.Emit(evt)
+	require.Eventually(t, func() bool { return rmgr.relay == nil }, 100*time.Millisecond, 10*time.Millisecond, "relay should be nil on private reachability")
 
-	rmgr.reachabilityChanged(network.ReachabilityPublic)
-	rmgr.reachabilityChanged(network.ReachabilityUnknown)
-	require.Nil(t, rmgr.relay, "relay should be nil on unknown reachability")
+	evt = event.EvtLocalReachabilityChanged{Reachability: network.ReachabilityPublic}
+	emitter.Emit(evt)
+	evt = event.EvtLocalReachabilityChanged{Reachability: network.ReachabilityUnknown}
+	emitter.Emit(evt)
+	require.Eventually(t, func() bool { return rmgr.relay == nil }, 100*time.Millisecond, 10*time.Millisecond, "relay should be nil on unknown reachability")
 
-	rmgr.reachabilityChanged(network.ReachabilityPublic)
-	relay := rmgr.relay
-	rmgr.reachabilityChanged(network.ReachabilityPublic)
-	require.Equal(t, relay, rmgr.relay, "relay should not be started on receiving the same event")
+	evt = event.EvtLocalReachabilityChanged{Reachability: network.ReachabilityPublic}
+	emitter.Emit(evt)
+	var relay *relayv2.Relay
+	require.Eventually(t, func() bool { relay = rmgr.relay; return relay != nil }, 100*time.Millisecond, 10*time.Millisecond)
+	emitter.Emit(evt)
+	require.Never(t, func() bool { return relay != rmgr.relay }, 100*time.Millisecond, 10*time.Millisecond, "relay should not be updated on receiving the same event")
 }
