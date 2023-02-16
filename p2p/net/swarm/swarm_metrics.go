@@ -166,5 +166,10 @@ func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, err error) {
 			e = "connection refused"
 		}
 	}
-	dialError.WithLabelValues(transport, e).Inc()
+
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+
+	*tags = append(*tags, transport, e)
+	dialError.WithLabelValues(*tags...).Inc()
 }
