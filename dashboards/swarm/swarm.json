@@ -464,7 +464,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "libp2p_swarm_connections_opened_total{dir=\"inbound\"} - libp2p_swarm_connections_closed_total{dir=\"inbound\"}",
+          "expr": "sum by (transport, security, muxer) (libp2p_swarm_connections_opened_total{dir=\"inbound\"}) - sum by (transport, security, muxer) (libp2p_swarm_connections_closed_total{dir=\"inbound\"})",
           "legendFormat": "{{transport}} {{security}} {{muxer}}",
           "range": true,
           "refId": "A"
@@ -691,7 +691,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "libp2p_swarm_connections_opened_total{dir=\"outbound\"} - libp2p_swarm_connections_closed_total{dir=\"outbound\"}",
+          "expr": "sum by (transport, security, muxer)(libp2p_swarm_connections_opened_total{dir=\"outbound\"}) - sum by (transport, security, muxer) (libp2p_swarm_connections_closed_total{dir=\"outbound\"})",
           "legendFormat": "{{transport}} {{security}} {{muxer}}",
           "range": true,
           "refId": "A"
@@ -1289,7 +1289,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "rate(libp2p_swarm_connections_opened_total{dir=\"inbound\"}[$__rate_interval])",
+          "expr": "sum (rate(libp2p_swarm_connections_opened_total{dir=\"inbound\"}[$__rate_interval])) by (transport, security, muxer)",
           "legendFormat": "{{transport}} {{security}} {{muxer}}",
           "range": true,
           "refId": "A"
@@ -1515,7 +1515,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "rate(libp2p_swarm_connections_opened_total{dir=\"outbound\"}[$__rate_interval])",
+          "expr": "sum (rate(libp2p_swarm_connections_opened_total{dir=\"outbound\"}[$__rate_interval])) by (transport, security, muxer)",
           "legendFormat": "{{transport}} {{security}} {{muxer}}",
           "range": true,
           "refId": "A"
@@ -1713,7 +1713,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "increase(libp2p_swarm_connections_opened_total{dir=\"inbound\"}[$__range])",
+          "expr": "sum (increase(libp2p_swarm_connections_opened_total{dir=\"inbound\"}[$__range])) by (transport, security, muxer)",
           "legendFormat": "{{transport}} {{security}} {{muxer}}",
           "range": true,
           "refId": "A"
@@ -1913,7 +1913,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "increase(libp2p_swarm_connections_opened_total{dir=\"outbound\"}[$__range])",
+          "expr": "sum (increase(libp2p_swarm_connections_opened_total{dir=\"outbound\"}[$__range])) by (transport, security, muxer)",
           "legendFormat": "{{transport}} {{security}} {{muxer}}",
           "range": true,
           "refId": "A"
@@ -1941,13 +1941,202 @@
           },
           "mappings": []
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ip4"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ip6"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "super-light-purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
         "y": 51
+      },
+      "id": 32,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (ip_version) (libp2p_swarm_connections_opened_total{dir=\"inbound\"}) - sum by (ip_version) (libp2p_swarm_connections_closed_total{dir=\"inbound\"})",
+          "legendFormat": "{{ip_version}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "New Inbound Connections: IP Version",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ip6"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "super-light-purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ip4"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 51
+      },
+      "id": 34,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (ip_version) (libp2p_swarm_connections_opened_total{dir=\"outbound\"}) - sum by (ip_version) (libp2p_swarm_connections_closed_total{dir=\"outbound\"})",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "New Outbound Connections: IP Version",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 59
       },
       "id": 15,
       "options": {
@@ -2137,7 +2326,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 51
+        "y": 59
       },
       "id": 17,
       "options": {
@@ -2220,7 +2409,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 67
       },
       "id": 25,
       "options": {
@@ -2296,6 +2485,6 @@
   "timezone": "",
   "title": "libp2p Swarm",
   "uid": "a15PyhO4z",
-  "version": 68,
+  "version": 12,
   "weekStart": ""
 }

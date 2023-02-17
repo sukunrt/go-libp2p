@@ -131,7 +131,7 @@ func (s *Swarm) AddListenAddr(a ma.Multiaddr) error {
 			}
 			canonicallog.LogPeerStatus(100, c.RemotePeer(), c.RemoteMultiaddr(), "connection_status", "established", "dir", "inbound")
 			if s.metricsTracer != nil {
-				s.metricsTracer.OpenedConnection(network.DirInbound, c.RemotePublicKey(), c.ConnState())
+				s.metricsTracer.OpenedConnection(network.DirInbound, c.RemotePublicKey(), c.ConnState(), c.LocalMultiaddr())
 			}
 
 			log.Debugf("swarm listener accepted connection: %s <-> %s", c.LocalMultiaddr(), c.RemoteMultiaddr())

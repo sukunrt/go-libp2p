@@ -29,13 +29,15 @@ func BenchmarkMetricsConnOpen(b *testing.B) {
 	}
 	_, pub, err := crypto.GenerateEd25519Key(rand.Reader)
 	require.NoError(b, err)
+	quicAddr := ma.StringCast("/ip4/1.2.3.4/udp/1/quic")
+	tcpAddr := ma.StringCast("/ip4/1.2.3.4/tcp/1/")
 	tr := NewMetricsTracer()
 	for i := 0; i < b.N; i++ {
 		switch i % 2 {
 		case 0:
-			tr.OpenedConnection(network.DirInbound, pub, quicConnState)
+			tr.OpenedConnection(network.DirInbound, pub, quicConnState, quicAddr)
 		case 1:
-			tr.OpenedConnection(network.DirInbound, pub, tcpConnState)
+			tr.OpenedConnection(network.DirInbound, pub, tcpConnState, tcpAddr)
 		}
 	}
 }
@@ -77,12 +79,16 @@ func TestMetricsNoAllocNoCover(t *testing.T) {
 	}
 
 	tests := map[string]func(){
-		"OpenedConnection": func() { mt.OpenedConnection(randItem(directions), randItem(keys), randItem(connections)) },
-		"ClosedConnection": func() {
-			mt.ClosedConnection(randItem(directions), time.Duration(mrand.Intn(100))*time.Second, randItem(connections))
+		"OpenedConnection": func() {
+			mt.OpenedConnection(randItem(directions), randItem(keys), randItem(connections), randItem(addrs))
 		},
-		"CompletedHandshake": func() { mt.CompletedHandshake(time.Duration(mrand.Intn(100))*time.Second, randItem(connections)) },
-		"FailedDialing":      func() { mt.FailedDialing(randItem(addrs), randItem(errors)) },
+		"ClosedConnection": func() {
+			mt.ClosedConnection(randItem(directions), time.Duration(mrand.Intn(100))*time.Second, randItem(connections), randItem(addrs))
+		},
+		"CompletedHandshake": func() {
+			mt.CompletedHandshake(time.Duration(mrand.Intn(100))*time.Second, randItem(connections), randItem(addrs))
+		},
+		"FailedDialing": func() { mt.FailedDialing(randItem(addrs), randItem(errors)) },
 	}
 
 	for method, f := range tests {
