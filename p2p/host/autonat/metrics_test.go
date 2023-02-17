@@ -1,3 +1,5 @@
+//go:build nocover
+
 package autonat
 
 import (
