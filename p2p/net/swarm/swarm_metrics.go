@@ -109,7 +109,7 @@ func appendConnectionState(tags []string, cs network.ConnectionState) []string {
 }
 
 func getIPVersion(addr ma.Multiaddr) string {
-	var version string
+	version := "unknown"
 	ma.ForEach(addr, func(c ma.Component) bool {
 		if c.Protocol().Code == ma.P_IP4 {
 			version = "ip4"
