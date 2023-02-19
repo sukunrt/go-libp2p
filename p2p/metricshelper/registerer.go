@@ -16,3 +16,42 @@ func RegisterCollectors(reg prometheus.Registerer, collectors ...prometheus.Coll
 		}
 	}
 }
+
+type Registerer interface {
+	UseRegisterer(reg prometheus.Registerer)
+	Registerer() prometheus.Registerer
+}
+
+type MetricsSetting struct {
+	reg prometheus.Registerer
+}
+
+func (s *MetricsSetting) UseRegisterer(reg prometheus.Registerer) {
+	s.reg = reg
+}
+
+func (s *MetricsSetting) Registerer() prometheus.Registerer {
+	if s.reg == nil {
+		return prometheus.DefaultRegisterer
+	}
+	return s.reg
+}
+
+func WithRegisterer[T Registerer](reg prometheus.Registerer) func(T) {
+	return func(r T) {
+		r.UseRegisterer(reg)
+	}
+}
+
+func NewTracer[T any, K Registerer](f func() K, collectors ...prometheus.Collector) func(opts ...func(K)) *T {
+	return func(opts ...func(K)) *T {
+		s := f()
+		for _, opt := range opts {
+			opt(s)
+		}
+		reg := s.Registerer()
+		RegisterCollectors(reg, collectors...)
+		t := new(T)
+		return t
+	}
+}

@@ -88,25 +88,16 @@ type metricsTracer struct{}
 var _ MetricsTracer = &metricsTracer{}
 
 type metricsTracerSetting struct {
-	reg prometheus.Registerer
+	metricshelper.MetricsSetting
 }
 
-type MetricsTracerOption func(*metricsTracerSetting)
+type MetricsTracerOption = func(*metricsTracerSetting)
 
-func WithRegisterer(reg prometheus.Registerer) MetricsTracerOption {
-	return func(s *metricsTracerSetting) {
-		s.reg = reg
-	}
-}
+var WithRegisterer = metricshelper.WithRegisterer[*metricsTracerSetting]
 
-func NewMetricsTracer(opts ...MetricsTracerOption) MetricsTracer {
-	setting := &metricsTracerSetting{reg: prometheus.DefaultRegisterer}
-	for _, opt := range opts {
-		opt(setting)
-	}
-	metricshelper.RegisterCollectors(setting.reg, collectors...)
-	return &metricsTracer{}
-}
+var NewMetricsTracer = metricshelper.NewTracer[metricsTracer](
+	func() *metricsTracerSetting { return &metricsTracerSetting{} },
+	collectors...)
 
 func (m *metricsTracer) EventEmitted(typ reflect.Type) {
 	tags := metricshelper.GetStringSlice()
