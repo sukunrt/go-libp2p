@@ -297,6 +297,9 @@ func (s *Swarm) addConn(tc transport.CapableConn, dir network.Direction) (*Conn,
 			if err != nil {
 				log.Warnf("failed to close connection with peer %s and addr %s; err: %s", p.Pretty(), addr, err)
 			}
+			if s.metricsTracer != nil {
+				s.metricsTracer.ClosedConnection(dir, time.Since(stat.Opened), c.ConnState(), c.LocalMultiaddr())
+			}
 			return nil, ErrGaterDisallowedConnection
 		}
 	}
@@ -315,6 +318,9 @@ func (s *Swarm) addConn(tc transport.CapableConn, dir network.Direction) (*Conn,
 	if s.conns.m == nil {
 		s.conns.Unlock()
 		tc.Close()
+		if s.metricsTracer != nil {
+			s.metricsTracer.ClosedConnection(dir, time.Since(stat.Opened), c.ConnState(), c.LocalMultiaddr())
+		}
 		return nil, ErrSwarmClosed
 	}
 

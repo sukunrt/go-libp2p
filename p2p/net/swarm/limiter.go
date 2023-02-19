@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/transport"
 
@@ -20,11 +21,12 @@ type dialResult struct {
 }
 
 type dialJob struct {
-	addr    ma.Multiaddr
-	peer    peer.ID
-	ctx     context.Context
-	resp    chan dialResult
-	timeout time.Duration
+	addr          ma.Multiaddr
+	peer          peer.ID
+	ctx           context.Context
+	resp          chan dialResult
+	timeout       time.Duration
+	metricsTracer MetricsTracer
 }
 
 func (dj *dialJob) cancelled() bool {
@@ -217,11 +219,15 @@ func (dl *dialLimiter) executeDial(j *dialJob) {
 	defer cancel()
 
 	con, err := dl.dialFunc(dctx, j.peer, j.addr)
+	st := time.Now()
 	select {
 	case j.resp <- dialResult{Conn: con, Addr: j.addr, Err: err}:
 	case <-j.ctx.Done():
 		if con != nil {
 			con.Close()
+			if j.metricsTracer != nil {
+				j.metricsTracer.ClosedConnection(network.DirOutbound, time.Since(st), con.ConnState(), con.LocalMultiaddr())
+			}
 		}
 	}
 }

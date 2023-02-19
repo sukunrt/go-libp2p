@@ -468,11 +468,12 @@ func (s *Swarm) limitedDial(ctx context.Context, p peer.ID, a ma.Multiaddr, resp
 		timeout = s.dialTimeoutLocal
 	}
 	s.limiter.AddDialJob(&dialJob{
-		addr:    a,
-		peer:    p,
-		resp:    resp,
-		ctx:     ctx,
-		timeout: timeout,
+		addr:          a,
+		peer:          p,
+		resp:          resp,
+		ctx:           ctx,
+		timeout:       timeout,
+		metricsTracer: s.metricsTracer,
 	})
 }
 
