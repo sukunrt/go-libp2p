@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -70,13 +69,15 @@ var (
 		},
 		[]string{"transport", "security", "muxer", "ip_version"},
 	)
+	collectors = []prometheus.Collector{
+		connsOpened,
+		keyTypes,
+		connsClosed,
+		dialError,
+		connDuration,
+		connHandshakeLatency,
+	}
 )
-
-var initMetricsOnce sync.Once
-
-func initMetrics() {
-	prometheus.MustRegister(connsOpened, keyTypes, connsClosed, dialError, connDuration, connHandshakeLatency)
-}
 
 type MetricsTracer interface {
 	OpenedConnection(network.Direction, crypto.PubKey, network.ConnectionState, ma.Multiaddr)
@@ -89,8 +90,24 @@ type metricsTracer struct{}
 
 var _ MetricsTracer = &metricsTracer{}
 
-func NewMetricsTracer() *metricsTracer {
-	initMetricsOnce.Do(initMetrics)
+type metricsTracerSetting struct {
+	reg prometheus.Registerer
+}
+
+type MetricsTracerOption func(*metricsTracerSetting)
+
+func WithRegisterer(reg prometheus.Registerer) MetricsTracerOption {
+	return func(s *metricsTracerSetting) {
+		s.reg = reg
+	}
+}
+
+func NewMetricsTracer(opts ...MetricsTracerOption) MetricsTracer {
+	setting := &metricsTracerSetting{reg: prometheus.DefaultRegisterer}
+	for _, opt := range opts {
+		opt(setting)
+	}
+	metricshelper.RegisterCollectors(setting.reg, collectors...)
 	return &metricsTracer{}
 }
 

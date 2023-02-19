@@ -1,8 +1,6 @@
 package identify
 
 import (
-	"sync"
-
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/p2p/metricshelper"
@@ -37,13 +35,12 @@ var (
 		},
 		[]string{"dir"},
 	)
+	collectors = []prometheus.Collector{
+		pushesTriggered,
+		identify,
+		identifyPush,
+	}
 )
-
-var initMetricsOnce sync.Once
-
-func initMetrics() {
-	prometheus.MustRegister(pushesTriggered, identify, identifyPush)
-}
 
 type MetricsTracer interface {
 	TriggeredPushes(event any)
@@ -55,8 +52,24 @@ type metricsTracer struct{}
 
 var _ MetricsTracer = &metricsTracer{}
 
-func NewMetricsTracer() MetricsTracer {
-	initMetricsOnce.Do(initMetrics)
+type metricsTracerSetting struct {
+	reg prometheus.Registerer
+}
+
+type MetricsTracerOption func(*metricsTracerSetting)
+
+func WithRegisterer(reg prometheus.Registerer) MetricsTracerOption {
+	return func(s *metricsTracerSetting) {
+		s.reg = reg
+	}
+}
+
+func NewMetricsTracer(opts ...MetricsTracerOption) MetricsTracer {
+	setting := &metricsTracerSetting{reg: prometheus.DefaultRegisterer}
+	for _, opt := range opts {
+		opt(setting)
+	}
+	metricshelper.RegisterCollectors(setting.reg, collectors...)
 	return &metricsTracer{}
 }
 

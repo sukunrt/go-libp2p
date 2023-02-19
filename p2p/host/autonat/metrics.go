@@ -1,7 +1,6 @@
 package autonat
 
 import (
-	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -58,20 +57,15 @@ var (
 			Help:      "Time of next probe",
 		},
 	)
-)
-
-var initMetricsOnce sync.Once
-
-func initMetrics(reg prometheus.Registerer) {
-	reg.MustRegister(
+	collectors = []prometheus.Collector{
 		reachabilityStatus,
 		reachabilityStatusConfidence,
 		receivedDialResponseTotal,
 		outgoingDialResponseTotal,
 		outgoingDialRefusedTotal,
 		nextProbeTimestamp,
-	)
-}
+	}
+)
 
 type MetricsTracer interface {
 	ReachabilityStatus(status network.Reachability)
@@ -107,14 +101,30 @@ const (
 	no_valid_address = "no valid address"
 )
 
+type metricsTracer struct{}
+
+var _ MetricsTracer = &metricsTracer{}
+
 type metricsTracerSetting struct {
 	reg prometheus.Registerer
 }
 
-type metricsTracer struct {
+type MetricsTracerOption func(*metricsTracerSetting)
+
+func WithRegisterer(reg prometheus.Registerer) MetricsTracerOption {
+	return func(s *metricsTracerSetting) {
+		s.reg = reg
+	}
 }
 
-var _ MetricsTracer = &metricsTracer{}
+func NewMetricsTracer(opts ...MetricsTracerOption) MetricsTracer {
+	setting := &metricsTracerSetting{reg: prometheus.DefaultRegisterer}
+	for _, opt := range opts {
+		opt(setting)
+	}
+	metricshelper.RegisterCollectors(setting.reg, collectors...)
+	return &metricsTracer{}
+}
 
 func (mt *metricsTracer) ReachabilityStatus(status network.Reachability) {
 	reachabilityStatus.Set(float64(status))
@@ -147,21 +157,4 @@ func (mt *metricsTracer) OutgoingDialRefused(reason string) {
 
 func (mt *metricsTracer) NextProbeTime(t time.Time) {
 	nextProbeTimestamp.Set(float64(t.Unix()))
-}
-
-type MetricsTracerOption = func(*metricsTracerSetting)
-
-func MustRegisterWith(reg prometheus.Registerer) MetricsTracerOption {
-	return func(s *metricsTracerSetting) {
-		s.reg = reg
-	}
-}
-
-func NewMetricsTracer(opts ...MetricsTracerOption) MetricsTracer {
-	settings := &metricsTracerSetting{reg: prometheus.DefaultRegisterer}
-	for _, opt := range opts {
-		opt(settings)
-	}
-	initMetricsOnce.Do(func() { initMetrics(settings.reg) })
-	return &metricsTracer{}
 }
