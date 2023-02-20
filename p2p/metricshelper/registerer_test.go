@@ -27,7 +27,6 @@ func TestRegisterCollectors(t *testing.T) {
 			Name: "counter",
 		},
 	)
-	require.NotPanics(t, func() { RegisterCollectors(reg, c1, c2) },
-		"should not panic on duplicate registration")
-	require.NotPanics(t, func() { RegisterCollectors(reg, c3) })
+	require.NotPanics(t, func() { RegisterCollectors(reg, c1, c2) })
+	require.NotPanics(t, func() { RegisterCollectors(reg, c3) }, "should not panic on duplicate registration")
 }

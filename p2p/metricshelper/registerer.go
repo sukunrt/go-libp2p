@@ -1,6 +1,8 @@
 package metricshelper
 
 import (
+	"errors"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -10,7 +12,7 @@ func RegisterCollectors(reg prometheus.Registerer, collectors ...prometheus.Coll
 	for _, c := range collectors {
 		err := reg.Register(c)
 		if err != nil {
-			if _, ok := err.(prometheus.AlreadyRegisteredError); !ok {
+			if ok := errors.As(err, &prometheus.AlreadyRegisteredError{}); !ok {
 				panic(err)
 			}
 		}

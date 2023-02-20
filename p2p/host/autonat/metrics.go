@@ -113,7 +113,9 @@ type MetricsTracerOption func(*metricsTracerSetting)
 
 func WithRegisterer(reg prometheus.Registerer) MetricsTracerOption {
 	return func(s *metricsTracerSetting) {
-		s.reg = reg
+		if reg != nil {
+			s.reg = reg
+		}
 	}
 }
 
