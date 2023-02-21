@@ -256,6 +256,7 @@ func TestHandshakeWithNextProtoSucceeds(t *testing.T) {
 		require.True(t, clientConn.RemotePublicKey().Equals(serverKey.GetPublic()), "server public key mismatch")
 		require.True(t, serverConn.RemotePublicKey().Equals(clientKey.GetPublic()), "client public key mismatch")
 		require.Equal(t, clientConn.ConnState().StreamMultiplexer, expectedMuxer)
+		require.Equal(t, clientConn.ConnState().EarlyMuxerSelection, expectedMuxer != "")
 		// exchange some data
 		_, err = serverConn.Write([]byte("foobar"))
 		require.NoError(t, err)

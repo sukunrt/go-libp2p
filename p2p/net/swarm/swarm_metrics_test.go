@@ -50,8 +50,8 @@ func TestMetricsNoAllocNoCover(t *testing.T) {
 	mt := NewMetricsTracer()
 
 	connections := []network.ConnectionState{
-		{StreamMultiplexer: "yamux", Security: "tls", Transport: "tcp"},
-		{StreamMultiplexer: "yamux", Security: "noise", Transport: "tcp"},
+		{StreamMultiplexer: "yamux", Security: "tls", Transport: "tcp", EarlyMuxerSelection: true},
+		{StreamMultiplexer: "yamux", Security: "noise", Transport: "tcp", EarlyMuxerSelection: false},
 		{StreamMultiplexer: "", Security: "", Transport: "quic"},
 		{StreamMultiplexer: "mplex", Security: "noise", Transport: "tcp"},
 	}
