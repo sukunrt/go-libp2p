@@ -186,15 +186,15 @@ func (u *upgrader) upgrade(ctx context.Context, t transport.Transport, maconn ma
 	}
 
 	tc := &transportConn{
-		MuxedConn:           smconn,
-		ConnMultiaddrs:      maconn,
-		ConnSecurity:        sconn,
-		transport:           t,
-		stat:                stat,
-		scope:               connScope,
-		muxer:               muxer,
-		security:            security,
-		earlyMuxerSelection: sconn.ConnState().EarlyMuxerSelection,
+		MuxedConn:                 smconn,
+		ConnMultiaddrs:            maconn,
+		ConnSecurity:              sconn,
+		transport:                 t,
+		stat:                      stat,
+		scope:                     connScope,
+		muxer:                     muxer,
+		security:                  security,
+		usedEarlyMuxerNegotiation: sconn.ConnState().UsedEarlyMuxerNegotiation,
 	}
 	return tc, nil
 }

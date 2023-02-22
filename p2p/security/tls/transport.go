@@ -172,8 +172,8 @@ func (t *Transport) setupConn(tlsConn *tls.Conn, remotePubKey ci.PubKey) (sec.Se
 		remotePeer:   remotePeerID,
 		remotePubKey: remotePubKey,
 		connectionState: network.ConnectionState{
-			StreamMultiplexer:   protocol.ID(nextProto),
-			EarlyMuxerSelection: nextProto != "",
+			StreamMultiplexer:         protocol.ID(nextProto),
+			UsedEarlyMuxerNegotiation: nextProto != "",
 		},
 	}, nil
 }

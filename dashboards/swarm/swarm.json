@@ -1064,69 +1064,22 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
             }
           },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "s"
+          "mappings": []
         },
         "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "early muxer"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
           {
             "matcher": {
               "id": "byName",
@@ -1141,6 +1094,21 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "early muxer"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
           }
         ]
       },
@@ -1150,13 +1118,20 @@
         "x": 12,
         "y": 25
       },
-      "id": 35,
+      "id": 36,
       "options": {
         "legend": {
-          "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
         "tooltip": {
           "mode": "single",
@@ -1170,8 +1145,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(rate(libp2p_swarm_handshake_latency_seconds_sum{transport=\"tcp\",early_muxer=\"true\"}[$__rate_interval])) / sum(rate(libp2p_swarm_handshake_latency_seconds_count{transport=\"tcp\",early_muxer=\"true\"}[$__rate_interval]))",
-          "hide": false,
+          "expr": "sum(libp2p_swarm_connections_opened_total{transport=\"tcp\",early_muxer=\"true\"} - libp2p_swarm_connections_closed_total{transport=\"tcp\",early_muxer=\"true\"})",
           "legendFormat": "early muxer",
           "range": true,
           "refId": "A"
@@ -1182,15 +1156,15 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(rate(libp2p_swarm_handshake_latency_seconds_sum{transport=\"tcp\",early_muxer=\"false\"}[$__rate_interval])) / sum(rate(libp2p_swarm_handshake_latency_seconds_count{transport=\"tcp\",early_muxer=\"false\"}[$__rate_interval]))",
+          "expr": "sum(libp2p_swarm_connections_opened_total{transport=\"tcp\",early_muxer=\"false\"} - libp2p_swarm_connections_closed_total{transport=\"tcp\",early_muxer=\"false\"})",
           "hide": false,
           "legendFormat": "regular",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Handshake Latency (Early Muxer Selection)",
-      "type": "timeseries"
+      "title": "Active Connections: Early Muxer Negotiation",
+      "type": "piechart"
     },
     {
       "collapsed": false,
@@ -2618,6 +2592,6 @@
   "timezone": "",
   "title": "libp2p Swarm",
   "uid": "a15PyhO4z",
-  "version": 2,
+  "version": 12,
   "weekStart": ""
 }

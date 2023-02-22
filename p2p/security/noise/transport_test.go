@@ -686,9 +686,9 @@ func TestHandshakeWithTransportEarlyData(t *testing.T) {
 		defer respConn.Close()
 
 		require.Equal(t, expectedProto, initConn.connectionState.StreamMultiplexer)
-		require.Equal(t, expectedProto != "", initConn.connectionState.EarlyMuxerSelection)
+		require.Equal(t, expectedProto != "", initConn.connectionState.UsedEarlyMuxerNegotiation)
 		require.Equal(t, expectedProto, respConn.connectionState.StreamMultiplexer)
-		require.Equal(t, expectedProto != "", respConn.connectionState.EarlyMuxerSelection)
+		require.Equal(t, expectedProto != "", respConn.connectionState.UsedEarlyMuxerNegotiation)
 
 		initData := []byte("Test data for noise transport")
 		_, err := initConn.Write(initData)

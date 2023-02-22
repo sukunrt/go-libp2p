@@ -107,7 +107,7 @@ func appendConnectionState(tags []string, cs network.ConnectionState) []string {
 	tags = append(tags, string(cs.StreamMultiplexer))
 
 	earlyMuxer := "false"
-	if cs.EarlyMuxerSelection {
+	if cs.UsedEarlyMuxerNegotiation {
 		earlyMuxer = "true"
 	}
 	tags = append(tags, earlyMuxer)

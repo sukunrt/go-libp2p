@@ -12,6 +12,9 @@
 Since the last release, we've added additional metrics to different components.
 Metrics were added to:
 * [AutoNat](https://github.com/libp2p/go-libp2p/pull/2086): Current Reachability Status and Confidence, Client and Server DialResponses, Server DialRejections. The dashboard is [available here](https://github.com/libp2p/go-libp2p/blob/master/dashboards/autonat/autonat.json).
+* Swarm:
+  - [Early Muxer Selection](https://github.com/libp2p/go-libp2p/pull/2119): Added early_muxer label indicating whether a connection was established using early muxer selection. 
+  - [IP Version](https://github.com/libp2p/go-libp2p/pull/2114): Added ip_version label to connection metrics
 
 ## 🐞 Bugfixes <!-- omit in toc -->
 
