@@ -35,17 +35,71 @@ var (
 		},
 		[]string{"dir"},
 	)
+	connectionPushSupport = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "conn_push_support",
+			Help:      "Identify Connection Push Support",
+		},
+		[]string{"support"},
+	)
+	protocolsCount = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "protocols_count",
+			Help:      "Protocols Count",
+		},
+	)
+	addrsCount = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "addrs_count",
+			Help:      "Address Count",
+		},
+	)
+	numProtocolsReceived = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Name:      "protocols_received",
+			Help:      "Number of Protocols received",
+			Buckets:   buckets,
+		},
+	)
+	numAddrsReceived = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Name:      "addrs_received",
+			Help:      "Number of addrs received",
+			Buckets:   buckets,
+		},
+	)
 	collectors = []prometheus.Collector{
 		pushesTriggered,
 		identify,
 		identifyPush,
+		connectionPushSupport,
+		protocolsCount,
+		addrsCount,
+		numProtocolsReceived,
+		numAddrsReceived,
 	}
+	// 1 to 20 and then up to 100 in steps of 5
+	buckets = append(
+		prometheus.LinearBuckets(1, 1, 20),
+		prometheus.LinearBuckets(25, 5, 16)...,
+	)
 )
 
 type MetricsTracer interface {
 	TriggeredPushes(event any)
 	Identify(network.Direction)
 	IdentifyPush(network.Direction)
+	IncrementPushSupport(identifyPushSupport)
+	DecrementPushSupport(identifyPushSupport)
+	NumProtocols(int)
+	NumAddrs(int)
+	NumProtocolsReceived(int)
+	NumAddrsReceived(int)
 }
 
 type metricsTracer struct{}
@@ -104,4 +158,47 @@ func (t *metricsTracer) IdentifyPush(dir network.Direction) {
 
 	*tags = append(*tags, metricshelper.GetDirection(dir))
 	identifyPush.WithLabelValues(*tags...).Inc()
+}
+
+func (t *metricsTracer) IncrementPushSupport(s identifyPushSupport) {
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+
+	*tags = append(*tags, getPushSupport(s))
+	connectionPushSupport.WithLabelValues(*tags...).Inc()
+}
+
+func (t *metricsTracer) DecrementPushSupport(s identifyPushSupport) {
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+
+	*tags = append(*tags, getPushSupport(s))
+	connectionPushSupport.WithLabelValues(*tags...).Dec()
+}
+
+func (t *metricsTracer) NumProtocols(n int) {
+	protocolsCount.Set(float64(n))
+}
+
+func (t *metricsTracer) NumAddrs(n int) {
+	addrsCount.Set(float64(n))
+}
+
+func (t *metricsTracer) NumProtocolsReceived(n int) {
+	numProtocolsReceived.Observe(float64(n))
+}
+
+func (t *metricsTracer) NumAddrsReceived(n int) {
+	numAddrsReceived.Observe(float64(n))
+}
+
+func getPushSupport(s identifyPushSupport) string {
+	switch s {
+	case identifyPushSupported:
+		return "supported"
+	case identifyPushUnsupported:
+		return "not supported"
+	default:
+		return "unknown"
+	}
 }

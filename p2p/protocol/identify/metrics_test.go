@@ -16,12 +16,24 @@ func TestMetricsNoAllocNoCover(t *testing.T) {
 		event.EvtLocalProtocolsUpdated{},
 		event.EvtNATDeviceTypeChanged{},
 	}
+
+	pushSupport := []identifyPushSupport{
+		identifyPushSupportUnknown,
+		identifyPushSupported,
+		identifyPushUnsupported,
+	}
 	dirs := []network.Direction{network.DirInbound, network.DirOutbound, network.DirUnknown}
 	tr := NewMetricsTracer()
 	tests := map[string]func(){
-		"TriggeredPushes": func() { tr.TriggeredPushes(events[rand.Intn(len(events))]) },
-		"Identify":        func() { tr.Identify(dirs[rand.Intn(len(dirs))]) },
-		"IdentifyPush":    func() { tr.IdentifyPush(dirs[rand.Intn(len(dirs))]) },
+		"TriggeredPushes":      func() { tr.TriggeredPushes(events[rand.Intn(len(events))]) },
+		"Identify":             func() { tr.Identify(dirs[rand.Intn(len(dirs))]) },
+		"IdentifyPush":         func() { tr.IdentifyPush(dirs[rand.Intn(len(dirs))]) },
+		"IncrementPushSupport": func() { tr.IncrementPushSupport(pushSupport[rand.Intn(len(pushSupport))]) },
+		"DecrementPushSupport": func() { tr.DecrementPushSupport(pushSupport[rand.Intn(len(pushSupport))]) },
+		"NumProtocols":         func() { tr.NumProtocols(rand.Intn(100)) },
+		"NumAddrs":             func() { tr.NumAddrs(rand.Intn(100)) },
+		"NumProtocolsReceived": func() { tr.NumProtocolsReceived(rand.Intn(100)) },
+		"NumAddrsReceived":     func() { tr.NumAddrsReceived(rand.Intn(100)) },
 	}
 	for method, f := range tests {
 		allocs := testing.AllocsPerRun(1000, f)

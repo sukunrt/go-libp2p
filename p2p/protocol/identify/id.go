@@ -491,6 +491,7 @@ func (ids *idService) handleIdentifyResponse(s network.Stream, isPush bool) erro
 	if !ok { // might already have disconnected
 		return nil
 	}
+	prevPushSupport := e.PushSupport
 	sup, err := ids.Host.Peerstore().SupportsProtocols(c.RemotePeer(), IDPush)
 	if supportsIdentifyPush := err == nil && len(sup) > 0; supportsIdentifyPush {
 		e.PushSupport = identifyPushSupported
@@ -498,6 +499,10 @@ func (ids *idService) handleIdentifyResponse(s network.Stream, isPush bool) erro
 		e.PushSupport = identifyPushUnsupported
 	}
 	ids.conns[c] = e
+	if ids.metricsTracer != nil && e.PushSupport != prevPushSupport {
+		ids.metricsTracer.IncrementPushSupport(e.PushSupport)
+		ids.metricsTracer.DecrementPushSupport(prevPushSupport)
+	}
 	return nil
 }
 
@@ -581,6 +586,11 @@ func (ids *idService) createBaseIdentifyResponse(conn network.Conn, snapshot *id
 		}
 		mes.ListenAddrs = append(mes.ListenAddrs, addr.Bytes())
 	}
+	if ids.metricsTracer != nil {
+		ids.metricsTracer.NumProtocols(len(mes.Protocols))
+		ids.metricsTracer.NumAddrs(len(mes.ListenAddrs))
+	}
+
 	// set our public key
 	ownKey := ids.Host.Peerstore().PubKey(ids.Host.ID())
 
@@ -682,6 +692,11 @@ func (ids *idService) consumeMessage(mes *pb.Identify, c network.Conn, isPush bo
 			continue
 		}
 		lmaddrs = append(lmaddrs, maddr)
+	}
+
+	if ids.metricsTracer != nil {
+		ids.metricsTracer.NumProtocolsReceived(len(mesProtocols))
+		ids.metricsTracer.NumAddrsReceived(len(lmaddrs))
 	}
 
 	// NOTE: Do not add `c.RemoteMultiaddr()` to the peerstore if the remote
@@ -886,6 +901,10 @@ func (nn *netNotifiee) Connected(_ network.Network, c network.Conn) {
 	ids.conns[c] = entry{}
 	ids.connsMu.Unlock()
 
+	if ids.metricsTracer != nil {
+		ids.metricsTracer.IncrementPushSupport(identifyPushSupportUnknown)
+	}
+
 	nn.IDService().IdentifyWait(c)
 }
 
@@ -894,8 +913,12 @@ func (nn *netNotifiee) Disconnected(_ network.Network, c network.Conn) {
 
 	// Stop tracking the connection.
 	ids.connsMu.Lock()
+	e, ok := ids.conns[c]
 	delete(ids.conns, c)
 	ids.connsMu.Unlock()
+	if ok && ids.metricsTracer != nil {
+		ids.metricsTracer.DecrementPushSupport(e.PushSupport)
+	}
 
 	if ids.Host.Network().Connectedness(c.RemotePeer()) != network.Connected {
 		// Last disconnect.
