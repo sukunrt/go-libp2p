@@ -35,11 +35,11 @@ var (
 		},
 		[]string{"dir"},
 	)
-	connectionPushSupport = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	peerPushSupport = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "conn_push_support",
-			Help:      "Identify Connection Push Support",
+			Name:      "peer_push_support_total",
+			Help:      "Identify Peer Push Support",
 		},
 		[]string{"support"},
 	)
@@ -77,7 +77,7 @@ var (
 		pushesTriggered,
 		identify,
 		identifyPush,
-		connectionPushSupport,
+		peerPushSupport,
 		protocolsCount,
 		addrsCount,
 		numProtocolsReceived,
@@ -91,15 +91,17 @@ var (
 )
 
 type MetricsTracer interface {
+	// TriggeredPushes counts IdentifyPushes triggered by event
 	TriggeredPushes(event any)
-	Identify(network.Direction)
-	IdentifyPush(network.Direction)
-	IncrementPushSupport(identifyPushSupport)
-	DecrementPushSupport(identifyPushSupport)
-	NumProtocols(int)
-	NumAddrs(int)
-	NumProtocolsReceived(int)
-	NumAddrsReceived(int)
+
+	// PeerPushSupport counts peers by Push Support
+	PeerPushSupport(identifyPushSupport)
+
+	// IdentifyReceived tracks metrics on receiving an identify response
+	IdentifyReceived(isPush bool, numProtocols int, numAddrs int)
+
+	// IdentifySent tracks metrics on sending an identify response
+	IdentifySent(isPush bool, numProtocols int, numAddrs int)
 }
 
 type metricsTracer struct{}
@@ -144,52 +146,52 @@ func (t *metricsTracer) TriggeredPushes(ev any) {
 	pushesTriggered.WithLabelValues(*tags...).Inc()
 }
 
-func (t *metricsTracer) Identify(dir network.Direction) {
-	tags := metricshelper.GetStringSlice()
-	defer metricshelper.PutStringSlice(tags)
-
-	*tags = append(*tags, metricshelper.GetDirection(dir))
-	identify.WithLabelValues(*tags...).Inc()
-}
-
-func (t *metricsTracer) IdentifyPush(dir network.Direction) {
-	tags := metricshelper.GetStringSlice()
-	defer metricshelper.PutStringSlice(tags)
-
-	*tags = append(*tags, metricshelper.GetDirection(dir))
-	identifyPush.WithLabelValues(*tags...).Inc()
-}
-
 func (t *metricsTracer) IncrementPushSupport(s identifyPushSupport) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
 
 	*tags = append(*tags, getPushSupport(s))
-	connectionPushSupport.WithLabelValues(*tags...).Inc()
+	peerPushSupport.WithLabelValues(*tags...).Inc()
 }
 
-func (t *metricsTracer) DecrementPushSupport(s identifyPushSupport) {
+func (t *metricsTracer) IdentifySent(isPush bool, numProtocols int, numAddrs int) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
 
-	*tags = append(*tags, getPushSupport(s))
-	connectionPushSupport.WithLabelValues(*tags...).Dec()
+	if isPush {
+		*tags = append(*tags, metricshelper.GetDirection(network.DirOutbound))
+		identifyPush.WithLabelValues(*tags...).Inc()
+	} else {
+		*tags = append(*tags, metricshelper.GetDirection(network.DirInbound))
+		identify.WithLabelValues(*tags...).Inc()
+	}
+
+	protocolsCount.Set(float64(numProtocols))
+	addrsCount.Set(float64(numAddrs))
 }
 
-func (t *metricsTracer) NumProtocols(n int) {
-	protocolsCount.Set(float64(n))
+func (t *metricsTracer) IdentifyReceived(isPush bool, numProtocols int, numAddrs int) {
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+
+	if isPush {
+		*tags = append(*tags, metricshelper.GetDirection(network.DirInbound))
+		identifyPush.WithLabelValues(*tags...).Inc()
+	} else {
+		*tags = append(*tags, metricshelper.GetDirection(network.DirOutbound))
+		identify.WithLabelValues(*tags...).Inc()
+	}
+
+	numProtocolsReceived.Observe(float64(numProtocols))
+	numAddrsReceived.Observe(float64(numAddrs))
 }
 
-func (t *metricsTracer) NumAddrs(n int) {
-	addrsCount.Set(float64(n))
-}
+func (t *metricsTracer) PeerPushSupport(support identifyPushSupport) {
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
 
-func (t *metricsTracer) NumProtocolsReceived(n int) {
-	numProtocolsReceived.Observe(float64(n))
-}
-
-func (t *metricsTracer) NumAddrsReceived(n int) {
-	numAddrsReceived.Observe(float64(n))
+	*tags = append(*tags, getPushSupport(support))
+	peerPushSupport.WithLabelValues(*tags...).Inc()
 }
 
 func getPushSupport(s identifyPushSupport) string {
