@@ -12,12 +12,6 @@
   "__elements": {},
   "__requires": [
     {
-      "type": "panel",
-      "id": "gauge",
-      "name": "Gauge",
-      "version": ""
-    },
-    {
       "type": "grafana",
       "id": "grafana",
       "name": "Grafana",
@@ -34,6 +28,12 @@
       "id": "prometheus",
       "name": "Prometheus",
       "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
     },
     {
       "type": "panel",
@@ -304,6 +304,9 @@
       },
       "id": 9,
       "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
@@ -312,8 +315,7 @@
           "fields": "",
           "values": false
         },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "textMode": "auto"
       },
       "pluginVersion": "9.3.6",
       "targets": [
@@ -331,7 +333,7 @@
         }
       ],
       "title": "Outgoing Address Count",
-      "type": "gauge"
+      "type": "stat"
     },
     {
       "datasource": {
@@ -381,6 +383,9 @@
       },
       "id": 17,
       "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
@@ -389,8 +394,7 @@
           "fields": "",
           "values": false
         },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "textMode": "auto"
       },
       "pluginVersion": "9.3.6",
       "targets": [
@@ -407,7 +411,7 @@
         }
       ],
       "title": "Outgoing Protocols Count",
-      "type": "gauge"
+      "type": "stat"
     },
     {
       "datasource": {
@@ -600,10 +604,34 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum( rate(libp2p_identify_addrs_received_sum[$__rate_interval])) / sum( rate(libp2p_identify_addrs_received_count[$__rate_interval]))",
-          "legendFormat": "address count",
+          "expr": "histogram_quantile(0.5, sum(rate(libp2p_identify_addrs_received_bucket[$__rate_interval])) by (le))",
+          "legendFormat": "50th percentile",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.90, sum(rate(libp2p_identify_addrs_received_bucket[$__rate_interval])) by (le))",
+          "hide": false,
+          "legendFormat": "90th percentile",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(libp2p_identify_addrs_received_bucket[$__rate_interval])) by (le))",
+          "hide": false,
+          "legendFormat": "99 percentile",
+          "range": true,
+          "refId": "C"
         }
       ],
       "title": "Incoming Address Count (Avg)",
@@ -708,10 +736,34 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(rate( libp2p_identify_protocols_received_sum[$__rate_interval])) / sum(rate(libp2p_identify_protocols_received_count[$__rate_interval]))",
-          "legendFormat": "protocols count",
+          "expr": "histogram_quantile(0.5, sum(rate(libp2p_identify_protocols_received_bucket[$__rate_interval])) by (le))",
+          "legendFormat": "50th percentile",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.90, sum(rate(libp2p_identify_protocols_received_bucket[$__rate_interval])) by (le))",
+          "hide": false,
+          "legendFormat": "90th percentile",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(libp2p_identify_protocols_received_bucket[$__rate_interval])) by (le))",
+          "hide": false,
+          "legendFormat": "99th percentile",
+          "range": true,
+          "refId": "C"
         }
       ],
       "title": "Incoming Protocols Count (Avg)",
@@ -771,13 +823,13 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "libp2p_identify_conn_push_support",
+          "expr": "increase(libp2p_identify_conn_push_support_total[$__rate_interval])",
           "legendFormat": "{{support}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Peers: Push Support",
+      "title": "New Connections: Push Support",
       "type": "piechart"
     }
   ],

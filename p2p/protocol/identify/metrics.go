@@ -35,11 +35,11 @@ var (
 		},
 		[]string{"dir"},
 	)
-	peerPushSupport = prometheus.NewCounterVec(
+	connPushSupportTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "peer_push_support_total",
-			Help:      "Identify Peer Push Support",
+			Name:      "conn_push_support_total",
+			Help:      "Identify Connection Push Support",
 		},
 		[]string{"support"},
 	)
@@ -77,7 +77,7 @@ var (
 		pushesTriggered,
 		identify,
 		identifyPush,
-		peerPushSupport,
+		connPushSupportTotal,
 		protocolsCount,
 		addrsCount,
 		numProtocolsReceived,
@@ -94,8 +94,8 @@ type MetricsTracer interface {
 	// TriggeredPushes counts IdentifyPushes triggered by event
 	TriggeredPushes(event any)
 
-	// PeerPushSupport counts peers by Push Support
-	PeerPushSupport(identifyPushSupport)
+	// ConnPushSupport counts peers by Push Support
+	ConnPushSupport(identifyPushSupport)
 
 	// IdentifyReceived tracks metrics on receiving an identify response
 	IdentifyReceived(isPush bool, numProtocols int, numAddrs int)
@@ -151,7 +151,7 @@ func (t *metricsTracer) IncrementPushSupport(s identifyPushSupport) {
 	defer metricshelper.PutStringSlice(tags)
 
 	*tags = append(*tags, getPushSupport(s))
-	peerPushSupport.WithLabelValues(*tags...).Inc()
+	connPushSupportTotal.WithLabelValues(*tags...).Inc()
 }
 
 func (t *metricsTracer) IdentifySent(isPush bool, numProtocols int, numAddrs int) {
@@ -186,12 +186,12 @@ func (t *metricsTracer) IdentifyReceived(isPush bool, numProtocols int, numAddrs
 	numAddrsReceived.Observe(float64(numAddrs))
 }
 
-func (t *metricsTracer) PeerPushSupport(support identifyPushSupport) {
+func (t *metricsTracer) ConnPushSupport(support identifyPushSupport) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
 
 	*tags = append(*tags, getPushSupport(support))
-	peerPushSupport.WithLabelValues(*tags...).Inc()
+	connPushSupportTotal.WithLabelValues(*tags...).Inc()
 }
 
 func getPushSupport(s identifyPushSupport) string {

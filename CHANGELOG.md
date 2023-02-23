@@ -17,7 +17,7 @@ Metrics were added to:
   - [IP Version](https://github.com/libp2p/go-libp2p/pull/2114): Added ip_version label to connection metrics
 * Identify:
   - Metrics for Identify, IdentifyPush, PushesTriggered (https://github.com/libp2p/go-libp2p/pull/2069)
-  - Address Count, Protocol Count, Peer Protocol Support (https://github.com/libp2p/go-libp2p/pull/2126)
+  - Address Count, Protocol Count, Connection IDPush Support (https://github.com/libp2p/go-libp2p/pull/2126)
 
 
 ## 🐞 Bugfixes <!-- omit in toc -->

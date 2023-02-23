@@ -25,7 +25,7 @@ func TestMetricsNoAllocNoCover(t *testing.T) {
 	tr := NewMetricsTracer()
 	tests := map[string]func(){
 		"TriggeredPushes":  func() { tr.TriggeredPushes(events[rand.Intn(len(events))]) },
-		"PeerPushSupport":  func() { tr.PeerPushSupport(pushSupport[rand.Intn(len(pushSupport))]) },
+		"ConnPushSupport":  func() { tr.ConnPushSupport(pushSupport[rand.Intn(len(pushSupport))]) },
 		"IdentifyReceived": func() { tr.IdentifyReceived(rand.Intn(2) == 0, rand.Intn(20), rand.Intn(20)) },
 		"IdentifySent":     func() { tr.IdentifySent(rand.Intn(2) == 0, rand.Intn(20), rand.Intn(20)) },
 	}

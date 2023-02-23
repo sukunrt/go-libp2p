@@ -501,7 +501,7 @@ func (ids *idService) handleIdentifyResponse(s network.Stream, isPush bool) erro
 	}
 
 	if ids.metricsTracer != nil {
-		ids.metricsTracer.PeerPushSupport(e.PushSupport)
+		ids.metricsTracer.ConnPushSupport(e.PushSupport)
 	}
 
 	ids.conns[c] = e
