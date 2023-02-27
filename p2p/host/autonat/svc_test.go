@@ -12,7 +12,6 @@ import (
 	bhost "github.com/libp2p/go-libp2p/p2p/host/blank"
 	swarmt "github.com/libp2p/go-libp2p/p2p/net/swarm/testing"
 
-	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,7 +57,7 @@ func TestAutoNATServiceDialRefused(t *testing.T) {
 	defer hc.Close()
 	connect(t, c.host, hc)
 
-	_, err := ac.DialBack(ctx, c.host.ID())
+	err := ac.DialBack(ctx, c.host.ID())
 	if err == nil {
 		t.Fatal("Dial back succeeded unexpectedly!")
 	}
@@ -82,7 +81,7 @@ func TestAutoNATServiceDialSuccess(t *testing.T) {
 	defer hc.Close()
 	connect(t, c.host, hc)
 
-	_, err := ac.DialBack(ctx, c.host.ID())
+	err := ac.DialBack(ctx, c.host.ID())
 	if err != nil {
 		t.Fatalf("Dial back failed: %s", err.Error())
 	}
@@ -106,12 +105,12 @@ func TestAutoNATServiceDialRateLimiter(t *testing.T) {
 	defer hc.Close()
 	connect(t, c.host, hc)
 
-	_, err := ac.DialBack(ctx, c.host.ID())
+	err := ac.DialBack(ctx, c.host.ID())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = ac.DialBack(ctx, c.host.ID())
+	err = ac.DialBack(ctx, c.host.ID())
 	if err == nil {
 		t.Fatal("Dial back succeeded unexpectedly!")
 	}
@@ -122,7 +121,7 @@ func TestAutoNATServiceDialRateLimiter(t *testing.T) {
 
 	time.Sleep(400 * time.Millisecond)
 
-	_, err = ac.DialBack(ctx, c.host.ID())
+	err = ac.DialBack(ctx, c.host.ID())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +148,7 @@ func TestAutoNATServiceGlobalLimiter(t *testing.T) {
 		hc, ac := makeAutoNATClient(t)
 		connect(t, hs, hc)
 
-		_, err := ac.DialBack(ctx, hs.ID())
+		err := ac.DialBack(ctx, hs.ID())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -158,7 +157,7 @@ func TestAutoNATServiceGlobalLimiter(t *testing.T) {
 	hc, ac := makeAutoNATClient(t)
 	defer hc.Close()
 	connect(t, hs, hc)
-	_, err := ac.DialBack(ctx, hs.ID())
+	err := ac.DialBack(ctx, hs.ID())
 	if err == nil {
 		t.Fatal("Dial back succeeded unexpectedly!")
 	}
@@ -207,7 +206,7 @@ func TestAutoNATServiceStartup(t *testing.T) {
 	hc, ac := makeAutoNATClient(t)
 	connect(t, h, hc)
 
-	_, err = ac.DialBack(context.Background(), h.ID())
+	err = ac.DialBack(context.Background(), h.ID())
 	if err != nil {
 		t.Fatal("autonat service be active in unknown mode.")
 	}
@@ -215,11 +214,11 @@ func TestAutoNATServiceStartup(t *testing.T) {
 	sub, _ := h.EventBus().Subscribe(new(event.EvtLocalReachabilityChanged))
 
 	anc := an.(*AmbientAutoNAT)
-	anc.recordObservation(autoNATResult{Reachability: network.ReachabilityPublic, address: ma.StringCast("/ip4/127.0.0.1/tcp/1234")})
+	anc.recordObservation(network.ReachabilityPublic)
 
 	<-sub.Out()
 
-	_, err = ac.DialBack(context.Background(), h.ID())
+	err = ac.DialBack(context.Background(), h.ID())
 	if err != nil {
 		t.Fatalf("autonat should be active, was %v", err)
 	}
