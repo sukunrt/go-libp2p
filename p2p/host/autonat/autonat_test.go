@@ -244,7 +244,7 @@ func TestAutoNATObservationRecording(t *testing.T) {
 	select {
 	case <-s.Out():
 		t.Fatal("received event without state transition")
-	case <-time.After(1 * time.Second):
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 
