@@ -19,6 +19,16 @@ This patch release fixes two bugs:
 
 **Full Changelog**: https://github.com/libp2p/go-libp2p/compare/v0.26.0...v0.26.1
 
+# [v0.27.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.27.0)
+
+## 🔦 Highlights <!-- omit in toc -->
+
+### Additional metrics <!-- omit in toc -->
+Since the last release, we've added metrics for:
+* [Relay Service](https://github.com/libp2p/go-libp2p/pull/2154): RequestStatus, RequestCounts, RejectionReasons for Reservation and Connection Requests,
+ConnectionDuration, BytesTransferred, Relay Service Status.
+
+
 # [v0.26.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.26.0)
 
 ## 🔦 Highlights <!-- omit in toc -->
