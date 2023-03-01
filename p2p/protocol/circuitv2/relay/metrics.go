@@ -183,41 +183,77 @@ func (mt *metricsTracer) RelayStatus(enabled bool) {
 }
 
 func (mt *metricsTracer) ConnectionRequestReceived() {
-	connectionTotal.WithLabelValues(typeReceived).Add(1)
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+	*tags = append(*tags, typeReceived)
+
+	connectionTotal.WithLabelValues(*tags...).Add(1)
 }
 
 func (mt *metricsTracer) ConnectionOpened() {
-	connectionTotal.WithLabelValues(typeOpened).Add(1)
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+	*tags = append(*tags, typeOpened)
+
+	connectionTotal.WithLabelValues(*tags...).Add(1)
 }
 
 func (mt *metricsTracer) ConnectionClosed(d time.Duration) {
-	connectionTotal.WithLabelValues(typeClosed).Add(1)
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+	*tags = append(*tags, typeClosed)
+
+	connectionTotal.WithLabelValues(*tags...).Add(1)
 	connectionDurationSeconds.Observe(d.Seconds())
 }
 
 func (mt *metricsTracer) ConnectionRequestHandled(status string, rejectionReason string) {
-	connectionRequestStatusTotal.WithLabelValues(status).Add(1)
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+	*tags = append(*tags, status)
+
+	connectionRequestStatusTotal.WithLabelValues(*tags...).Add(1)
 	if status == requestStatusRejected {
-		connectionRejectionTotal.WithLabelValues(rejectionReason).Add(1)
+		*tags = (*tags)[:0]
+		*tags = append(*tags, rejectionReason)
+		connectionRejectionTotal.WithLabelValues(*tags...).Add(1)
 	}
 }
 
 func (mt *metricsTracer) ReservationRequestReceived() {
-	reservationTotal.WithLabelValues(typeReceived).Add(1)
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+	*tags = append(*tags, typeReceived)
+
+	reservationTotal.WithLabelValues(*tags...).Add(1)
 }
 
 func (mt *metricsTracer) ReservationOpened() {
-	reservationTotal.WithLabelValues(typeOpened).Add(1)
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+	*tags = append(*tags, typeOpened)
+
+	reservationTotal.WithLabelValues(*tags...).Add(1)
 }
 
 func (mt *metricsTracer) ReservationClosed(cnt int) {
-	reservationTotal.WithLabelValues(typeClosed).Add(float64(cnt))
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+	*tags = append(*tags, typeClosed)
+
+	reservationTotal.WithLabelValues(*tags...).Add(float64(cnt))
 }
 
 func (mt *metricsTracer) ReservationRequestHandled(status string, rejectionReason string) {
-	reservationRequestStatusTotal.WithLabelValues(status).Add(1)
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+	*tags = append(*tags, status)
+
+	reservationRequestStatusTotal.WithLabelValues(*tags...).Add(1)
 	if status == requestStatusRejected {
-		reservationRejectedTotal.WithLabelValues(rejectionReason).Add(1)
+		*tags = (*tags)[:0]
+		*tags = append(*tags, rejectionReason)
+		reservationRejectedTotal.WithLabelValues(*tags...).Add(1)
 	}
 }
 
