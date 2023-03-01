@@ -722,6 +722,9 @@ func (r *Relay) disconnected(n network.Network, c network.Conn) {
 
 	r.mx.Lock()
 	_, ok := r.rsvp[p]
+	if ok {
+		delete(r.rsvp, p)
+	}
 	r.mx.Unlock()
 
 	if ok && r.metricsTracer != nil {
