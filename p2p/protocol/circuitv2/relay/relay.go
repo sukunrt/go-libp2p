@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -59,6 +60,8 @@ type Relay struct {
 	closed bool
 
 	selfAddr ma.Multiaddr
+
+	metricsTracer MetricsTracer
 }
 
 // New constructs a new limited relay that can provide relay services in the given host.
@@ -100,6 +103,9 @@ func New(h host.Host, opts ...Option) (*Relay, error) {
 	r.notifiee = &network.NotifyBundle{DisconnectedF: r.disconnected}
 	h.Network().Notify(r.notifiee)
 
+	if r.metricsTracer != nil {
+		r.metricsTracer.RelayStatus(true)
+	}
 	r.wg.Add(1)
 	go r.background()
 
@@ -116,6 +122,9 @@ func (r *Relay) Close() error {
 		r.host.Network().StopNotify(r.notifiee)
 		r.scope.Done()
 		r.cancel()
+		if r.metricsTracer != nil {
+			r.metricsTracer.RelayStatus(false)
+		}
 		r.wg.Wait()
 		return nil
 	}
@@ -169,18 +178,24 @@ func (r *Relay) handleStream(s network.Stream) {
 func (r *Relay) handleReserve(s network.Stream) {
 	defer s.Close()
 
+	if r.metricsTracer != nil {
+		r.metricsTracer.ReservationRequestReceived()
+	}
+
 	p := s.Conn().RemotePeer()
 	a := s.Conn().RemoteMultiaddr()
 
 	if isRelayAddr(a) {
 		log.Debugf("refusing relay reservation for %s; reservation attempt over relay connection")
-		r.handleError(s, pbv2.Status_PERMISSION_DENIED)
+		r.handleErrorAndTrackMetrics(s, pbv2.HopMessage_RESERVE, pbv2.Status_PERMISSION_DENIED,
+			rejectionReasonAttemptOverRelay)
 		return
 	}
 
 	if r.acl != nil && !r.acl.AllowReserve(p, a) {
 		log.Debugf("refusing relay reservation for %s; permission denied", p)
-		r.handleError(s, pbv2.Status_PERMISSION_DENIED)
+		r.handleErrorAndTrackMetrics(s, pbv2.HopMessage_RESERVE, pbv2.Status_PERMISSION_DENIED,
+			rejectionReasonDisallowed)
 		return
 	}
 
@@ -199,7 +214,8 @@ func (r *Relay) handleReserve(s network.Stream) {
 		if err := r.constraints.AddReservation(p, a); err != nil {
 			r.mx.Unlock()
 			log.Debugf("refusing relay reservation for %s; IP constraint violation: %s", p, err)
-			r.handleError(s, pbv2.Status_RESERVATION_REFUSED)
+			r.handleErrorAndTrackMetrics(s, pbv2.HopMessage_RESERVE, pbv2.Status_RESERVATION_REFUSED,
+				rejectionReasonIPConstraintViolation)
 			return
 		}
 	}
@@ -208,6 +224,9 @@ func (r *Relay) handleReserve(s network.Stream) {
 	r.rsvp[p] = expire
 	r.host.ConnManager().TagPeer(p, "relay-reservation", ReservationTagWeight)
 	r.mx.Unlock()
+	if !exists && r.metricsTracer != nil {
+		r.metricsTracer.ReservationOpened()
+	}
 
 	log.Debugf("reserving relay slot for %s", p)
 
@@ -217,47 +236,59 @@ func (r *Relay) handleReserve(s network.Stream) {
 	if err := r.writeResponse(s, pbv2.Status_OK, r.makeReservationMsg(p, expire), r.makeLimitMsg(p)); err != nil {
 		log.Debugf("error writing reservation response; retracting reservation for %s", p)
 		s.Reset()
+		if r.metricsTracer != nil {
+			r.metricsTracer.ReservationRequestHandled(requestStatusError, "")
+		}
+	}
+
+	if r.metricsTracer != nil {
+		r.metricsTracer.ReservationRequestHandled(requestStatusOK, "")
 	}
 }
 
 func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
+	if r.metricsTracer != nil {
+		r.metricsTracer.ConnectionRequestReceived()
+	}
+
 	src := s.Conn().RemotePeer()
 	a := s.Conn().RemoteMultiaddr()
 
 	span, err := r.scope.BeginSpan()
 	if err != nil {
 		log.Debugf("failed to begin relay transaction: %s", err)
-		r.handleError(s, pbv2.Status_RESOURCE_LIMIT_EXCEEDED)
+		r.handleErrorAndTrackMetrics(s, pbv2.HopMessage_CONNECT, pbv2.Status_RESOURCE_LIMIT_EXCEEDED,
+			rejectionReasonResourceLimitExceeded)
 		return
 	}
 
-	fail := func(status pbv2.Status) {
+	fail := func(status pbv2.Status, rejectionReason string) {
 		span.Done()
-		r.handleError(s, status)
+		r.handleErrorAndTrackMetrics(s, pbv2.HopMessage_CONNECT, status, rejectionReason)
 	}
 
 	// reserve buffers for the relay
 	if err := span.ReserveMemory(2*r.rc.BufferSize, network.ReservationPriorityHigh); err != nil {
 		log.Debugf("error reserving memory for relay: %s", err)
-		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED)
+		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED, rejectionReasonResourceLimitExceeded)
 		return
 	}
 
 	if isRelayAddr(a) {
 		log.Debugf("refusing connection from %s; connection attempt over relay connection")
-		fail(pbv2.Status_PERMISSION_DENIED)
+		fail(pbv2.Status_PERMISSION_DENIED, rejectionReasonAttemptOverRelay)
 		return
 	}
 
 	dest, err := util.PeerToPeerInfoV2(msg.GetPeer())
 	if err != nil {
-		fail(pbv2.Status_MALFORMED_MESSAGE)
+		fail(pbv2.Status_MALFORMED_MESSAGE, rejectionReasonBadRequest)
 		return
 	}
 
 	if r.acl != nil && !r.acl.AllowConnect(src, s.Conn().RemoteMultiaddr(), dest.ID) {
 		log.Debugf("refusing connection from %s to %s; permission denied", src, dest.ID)
-		fail(pbv2.Status_PERMISSION_DENIED)
+		fail(pbv2.Status_PERMISSION_DENIED, rejectionReasonDisallowed)
 		return
 	}
 
@@ -266,7 +297,7 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
 	if !rsvp {
 		r.mx.Unlock()
 		log.Debugf("refusing connection from %s to %s; no reservation", src, dest.ID)
-		fail(pbv2.Status_NO_RESERVATION)
+		fail(pbv2.Status_NO_RESERVATION, rejectionReasonNoReservation)
 		return
 	}
 
@@ -274,7 +305,7 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
 	if srcConns >= r.rc.MaxCircuits {
 		r.mx.Unlock()
 		log.Debugf("refusing connection from %s to %s; too many connections from %s", src, dest.ID, src)
-		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED)
+		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED, rejectionReasonResourceLimitExceeded)
 		return
 	}
 
@@ -282,7 +313,7 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
 	if destConns >= r.rc.MaxCircuits {
 		r.mx.Unlock()
 		log.Debugf("refusing connection from %s to %s; too many connecitons to %s", src, dest.ID, dest.ID)
-		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED)
+		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED, rejectionReasonResourceLimitExceeded)
 		return
 	}
 
@@ -290,12 +321,20 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
 	r.addConn(dest.ID)
 	r.mx.Unlock()
 
+	if r.metricsTracer != nil {
+		r.metricsTracer.ConnectionOpened()
+	}
+	connStTime := time.Now()
+
 	cleanup := func() {
 		span.Done()
 		r.mx.Lock()
 		r.rmConn(src)
 		r.rmConn(dest.ID)
 		r.mx.Unlock()
+		if r.metricsTracer != nil {
+			r.metricsTracer.ConnectionClosed(time.Since(connStTime))
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(r.ctx, ConnectTimeout)
@@ -307,26 +346,26 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
 	if err != nil {
 		log.Debugf("error opening relay stream to %s: %s", dest.ID, err)
 		cleanup()
-		r.handleError(s, pbv2.Status_CONNECTION_FAILED)
+		r.handleErrorAndTrackMetrics(s, pbv2.HopMessage_CONNECT, pbv2.Status_CONNECTION_FAILED, "")
 		return
 	}
 
-	fail = func(status pbv2.Status) {
+	fail = func(status pbv2.Status, rejectionReason string) {
 		bs.Reset()
 		cleanup()
-		r.handleError(s, status)
+		r.handleErrorAndTrackMetrics(s, pbv2.HopMessage_CONNECT, status, rejectionReason)
 	}
 
 	if err := bs.Scope().SetService(ServiceName); err != nil {
 		log.Debugf("error attaching stream to relay service: %s", err)
-		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED)
+		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED, rejectionReasonResourceLimitExceeded)
 		return
 	}
 
 	// handshake
 	if err := bs.Scope().ReserveMemory(maxMessageSize, network.ReservationPriorityAlways); err != nil {
-		log.Debugf("erro reserving memory for stream: %s", err)
-		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED)
+		log.Debugf("error reserving memory for stream: %s", err)
+		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED, rejectionReasonResourceLimitExceeded)
 		return
 	}
 	defer bs.Scope().ReleaseMemory(maxMessageSize)
@@ -345,7 +384,7 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
 	err = wr.WriteMsg(&stopmsg)
 	if err != nil {
 		log.Debugf("error writing stop handshake")
-		fail(pbv2.Status_CONNECTION_FAILED)
+		fail(pbv2.Status_CONNECTION_FAILED, "")
 		return
 	}
 
@@ -354,19 +393,19 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
 	err = rd.ReadMsg(&stopmsg)
 	if err != nil {
 		log.Debugf("error reading stop response: %s", err.Error())
-		fail(pbv2.Status_CONNECTION_FAILED)
+		fail(pbv2.Status_CONNECTION_FAILED, "")
 		return
 	}
 
 	if t := stopmsg.GetType(); t != pbv2.StopMessage_STATUS {
 		log.Debugf("unexpected stop response; not a status message (%d)", t)
-		fail(pbv2.Status_CONNECTION_FAILED)
+		fail(pbv2.Status_CONNECTION_FAILED, "")
 		return
 	}
 
 	if status := stopmsg.GetStatus(); status != pbv2.Status_OK {
 		log.Debugf("relay stop failure: %d", status)
-		fail(pbv2.Status_CONNECTION_FAILED)
+		fail(pbv2.Status_CONNECTION_FAILED, "")
 		return
 	}
 
@@ -382,6 +421,9 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
 		bs.Reset()
 		s.Reset()
 		cleanup()
+		if r.metricsTracer != nil {
+			r.metricsTracer.ConnectionRequestHandled(requestStatusError, "")
+		}
 		return
 	}
 
@@ -410,6 +452,10 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) {
 	} else {
 		go r.relayUnlimited(s, bs, src, dest.ID, done)
 		go r.relayUnlimited(bs, s, dest.ID, src, done)
+	}
+
+	if r.metricsTracer != nil {
+		r.metricsTracer.ConnectionRequestHandled(requestStatusOK, "")
 	}
 }
 
@@ -441,7 +487,7 @@ func (r *Relay) relayLimited(src, dest network.Stream, srcID, destID peer.ID, li
 
 	limitedSrc := io.LimitReader(src, limit)
 
-	count, err := io.CopyBuffer(dest, limitedSrc, buf)
+	count, err := r.copyWithBuffer(dest, limitedSrc, buf)
 	if err != nil {
 		log.Debugf("relay copy error: %s", err)
 		// Reset both.
@@ -465,7 +511,7 @@ func (r *Relay) relayUnlimited(src, dest network.Stream, srcID, destID peer.ID, 
 	buf := pool.Get(r.rc.BufferSize)
 	defer pool.Put(buf)
 
-	count, err := io.CopyBuffer(dest, src, buf)
+	count, err := r.copyWithBuffer(dest, src, buf)
 	if err != nil {
 		log.Debugf("relay copy error: %s", err)
 		// Reset both.
@@ -479,6 +525,47 @@ func (r *Relay) relayUnlimited(src, dest network.Stream, srcID, destID peer.ID, 
 	log.Debugf("relayed %d bytes from %s to %s", count, srcID, destID)
 }
 
+// errInvalidWrite means that a write returned an impossible count.
+// copied from io.errInvalidWrite
+var errInvalidWrite = errors.New("invalid write result")
+
+// copyWithBuffer copies from src to dst using the provided buf until either EOF is reached
+// on src or an error occurs. It reports the number of bytes transferred to metricsTracer.
+// The implementation is a modified form of io.CopyBuffer to support metrics tracking.
+func (r *Relay) copyWithBuffer(dst io.Writer, src io.Reader, buf []byte) (written int64, err error) {
+	for {
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[0:nr])
+			if nw < 0 || nr < nw {
+				nw = 0
+				if ew == nil {
+					ew = errInvalidWrite
+				}
+			}
+			written += int64(nw)
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+			if r.metricsTracer != nil {
+				r.metricsTracer.BytesTransferred(nr + nw)
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+	return written, err
+}
+
 func (r *Relay) handleError(s network.Stream, status pbv2.Status) {
 	log.Debugf("relay error: %s (%d)", pbv2.Status_name[int32(status)], status)
 	err := r.writeResponse(s, status, nil, nil)
@@ -487,6 +574,34 @@ func (r *Relay) handleError(s network.Stream, status pbv2.Status) {
 		log.Debugf("error writing relay response: %s", err.Error())
 	} else {
 		s.Close()
+	}
+}
+
+func (r *Relay) handleErrorAndTrackMetrics(s network.Stream, reqType pbv2.HopMessage_Type, status pbv2.Status,
+	rejectionReason string) {
+	r.handleError(s, status)
+	if r.metricsTracer != nil {
+		var reqStatus string
+		switch status {
+		case pbv2.Status_RESERVATION_REFUSED,
+			pbv2.Status_RESOURCE_LIMIT_EXCEEDED,
+			pbv2.Status_PERMISSION_DENIED,
+			pbv2.Status_NO_RESERVATION,
+			pbv2.Status_MALFORMED_MESSAGE:
+
+			reqStatus = requestStatusRejected
+		case pbv2.Status_UNEXPECTED_MESSAGE, pbv2.Status_CONNECTION_FAILED:
+			reqStatus = requestStatusError
+		default:
+			reqStatus = "unknown"
+		}
+
+		switch reqType {
+		case pbv2.HopMessage_CONNECT:
+			r.metricsTracer.ConnectionRequestHandled(reqStatus, rejectionReason)
+		case pbv2.HopMessage_RESERVE:
+			r.metricsTracer.ReservationRequestHandled(reqStatus, rejectionReason)
+		}
 	}
 }
 
@@ -580,12 +695,16 @@ func (r *Relay) gc() {
 	defer r.mx.Unlock()
 
 	now := time.Now()
-
+	cnt := 0
 	for p, expire := range r.rsvp {
 		if r.closed || expire.Before(now) {
 			delete(r.rsvp, p)
 			r.host.ConnManager().UntagPeer(p, "relay-reservation")
+			cnt++
 		}
+	}
+	if r.metricsTracer != nil {
+		r.metricsTracer.ReservationClosed(cnt)
 	}
 
 	for p, count := range r.conns {
@@ -602,9 +721,12 @@ func (r *Relay) disconnected(n network.Network, c network.Conn) {
 	}
 
 	r.mx.Lock()
-	defer r.mx.Unlock()
+	_, ok := r.rsvp[p]
+	r.mx.Unlock()
 
-	delete(r.rsvp, p)
+	if ok && r.metricsTracer != nil {
+		r.metricsTracer.ReservationClosed(1)
+	}
 }
 
 func isRelayAddr(a ma.Multiaddr) bool {
