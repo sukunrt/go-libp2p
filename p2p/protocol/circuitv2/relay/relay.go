@@ -180,6 +180,13 @@ func (r *Relay) handleReserve(s network.Stream) {
 	}
 
 	r.mx.Lock()
+	// Check if relay is still active. Otherwise ConnManager.UnTagPeer will not be called if this block runs after
+	// Close() call
+	if r.closed.Load() {
+		r.mx.Unlock()
+		log.Debugf("refusing relay reservation for %s; relay closed", p)
+		r.handleError(s, pbv2.Status_RESERVATION_REFUSED)
+	}
 	now := time.Now()
 
 	_, exists := r.rsvp[p]
