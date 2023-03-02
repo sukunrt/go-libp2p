@@ -42,7 +42,6 @@ var log = logging.Logger("relay")
 
 // Relay is the (limited) relay service object.
 type Relay struct {
-	closed atomic.Bool
 	ctx    context.Context
 	cancel func()
 
@@ -51,10 +50,12 @@ type Relay struct {
 	acl         ACLFilter
 	constraints *constraints
 	scope       network.ResourceScopeSpan
+	notifiee    network.Notifiee
 
-	mx    sync.Mutex
-	rsvp  map[peer.ID]time.Time
-	conns map[peer.ID]int
+	mx     sync.Mutex
+	rsvp   map[peer.ID]time.Time
+	conns  map[peer.ID]int
+	closed bool
 
 	selfAddr ma.Multiaddr
 }
@@ -95,25 +96,25 @@ func New(h host.Host, opts ...Option) (*Relay, error) {
 	r.selfAddr = ma.StringCast(fmt.Sprintf("/p2p/%s", h.ID()))
 
 	h.SetStreamHandler(proto.ProtoIDv2Hop, r.handleStream)
-	h.Network().Notify(
-		&network.NotifyBundle{
-			DisconnectedF: r.disconnected,
-		})
+	r.notifiee = &network.NotifyBundle{DisconnectedF: r.disconnected}
+	h.Network().Notify(r.notifiee)
 	go r.background()
 
 	return r, nil
 }
 
 func (r *Relay) Close() error {
-	if r.closed.CompareAndSwap(false, true) {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+	if !r.closed {
+		r.closed = true
 		r.host.RemoveStreamHandler(proto.ProtoIDv2Hop)
+		r.host.Network().StopNotify(r.notifiee)
 		r.scope.Done()
 		r.cancel()
-		r.mx.Lock()
 		for p := range r.rsvp {
 			r.host.ConnManager().UntagPeer(p, "relay-reservation")
 		}
-		r.mx.Unlock()
 	}
 	return nil
 }
@@ -182,10 +183,10 @@ func (r *Relay) handleReserve(s network.Stream) {
 	r.mx.Lock()
 	// Check if relay is still active. Otherwise ConnManager.UnTagPeer will not be called if this block runs after
 	// Close() call
-	if r.closed.Load() {
+	if r.closed {
 		r.mx.Unlock()
 		log.Debugf("refusing relay reservation for %s; relay closed", p)
-		r.handleError(s, pbv2.Status_RESERVATION_REFUSED)
+		r.handleError(s, pbv2.Status_PERMISSION_DENIED)
 	}
 	now := time.Now()
 
