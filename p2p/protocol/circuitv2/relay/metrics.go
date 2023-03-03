@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/p2p/metricshelper"
+	pbv2 "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/pb"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -14,55 +15,55 @@ var (
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
 			Name:      "status",
-			Help:      "Relay Current Status",
+			Help:      "Relay Status",
 		},
 	)
 
-	reservationTotal = prometheus.NewCounterVec(
+	reservationsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "reservation_total",
+			Name:      "reservations_total",
 			Help:      "Relay Reservation Request",
 		},
 		[]string{"type"},
 	)
-	reservationRequestStatusTotal = prometheus.NewCounterVec(
+	reservationRequestResponseStatusTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "reservation_request_status_total",
-			Help:      "Relay Reservation Request Status",
+			Name:      "reservation_request_response_status_total",
+			Help:      "Relay Reservation Request Response Status",
 		},
 		[]string{"status"},
 	)
-	reservationRejectedTotal = prometheus.NewCounterVec(
+	reservationRejectionsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "reservation_rejected_total",
+			Name:      "reservation_rejections_total",
 			Help:      "Relay Reservation Rejected Reason",
 		},
 		[]string{"reason"},
 	)
 
-	connectionTotal = prometheus.NewCounterVec(
+	connectionsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "connection_total",
+			Name:      "connections_total",
 			Help:      "Relay Connection Total",
 		},
 		[]string{"type"},
 	)
-	connectionRequestStatusTotal = prometheus.NewCounterVec(
+	connectionRequestResponseStatusTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "connection_request_status_total",
+			Name:      "connection_request_response_status_total",
 			Help:      "Relay Connection Request Status",
 		},
 		[]string{"status"},
 	)
-	connectionRejectionTotal = prometheus.NewCounterVec(
+	connectionRejectionsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "connection_rejected_total",
+			Name:      "connection_rejections_total",
 			Help:      "Relay Connection Rejected Reason",
 		},
 		[]string{"reason"},
@@ -75,24 +76,24 @@ var (
 		},
 	)
 
-	bytesTransferredTotal = prometheus.NewCounter(
+	dataTransferredBytesTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "bytes_transferred_total",
+			Name:      "data_transferred_bytes_total",
 			Help:      "Bytes Transferred Total",
 		},
 	)
 
 	collectors = []prometheus.Collector{
 		status,
-		reservationTotal,
-		reservationRequestStatusTotal,
-		reservationRejectedTotal,
-		connectionTotal,
-		connectionRequestStatusTotal,
-		connectionRejectionTotal,
+		reservationsTotal,
+		reservationRequestResponseStatusTotal,
+		reservationRejectionsTotal,
+		connectionsTotal,
+		connectionRequestResponseStatusTotal,
+		connectionRejectionsTotal,
 		connectionDurationSeconds,
-		bytesTransferredTotal,
+		dataTransferredBytesTotal,
 	}
 )
 
@@ -102,48 +103,26 @@ const (
 	requestStatusError    = "error"
 )
 
-const (
-	typeReceived = "received"
-	typeOpened   = "opened"
-	typeClosed   = "closed"
-)
-
-const (
-	rejectionReasonAttemptOverRelay      = "attempt over relay"
-	rejectionReasonDisallowed            = "disallowed"
-	rejectionReasonIPConstraintViolation = "ip constraint violation"
-	rejectionReasonResourceLimitExceeded = "resource limit exceeded"
-	rejectionReasonBadRequest            = "bad request"
-	rejectionReasonNoReservation         = "no reservation"
-	rejectionReasonClosed                = "closed"
-)
-
 // MetricsTracer is the interface for tracking metrics for relay service
 type MetricsTracer interface {
 	// RelayStatus tracks whether the service is currently active
 	RelayStatus(enabled bool)
 
-	// ConnectionRequestReceived tracks a new relay connect request
-	ConnectionRequestReceived()
 	// ConnectionOpened tracks metrics on opening a relay connection
 	ConnectionOpened()
 	// ConnectionClosed tracks metrics on closing a relay connection
 	ConnectionClosed(d time.Duration)
 	// ConnectionRequestHandled tracks metrics on handling a relay connection request
-	// rejectionReason is ignored for status other than `requestStatusRejected`
-	ConnectionRequestHandled(status string, rejectionReason string)
+	ConnectionRequestHandled(status pbv2.Status)
 
-	// ReservationRequestReceived tracks a new relay reservation request
-	ReservationRequestReceived()
-	// ReservationOpened tracks metrics on Opening a relay reservation
-	ReservationOpened()
+	// ReservationAllowed tracks metrics on opening or renewing a relay reservation
+	ReservationAllowed(isRenewal bool)
 	// ReservationRequestClosed tracks metrics on closing a relay reservation
 	ReservationClosed(cnt int)
 	// ReservationRequestHandled tracks metrics on handling a relay reservation request
-	// rejectionReason is ignored for status other than `requestStatusRejected`
-	ReservationRequestHandled(status string, rejectionReason string)
+	ReservationRequestHandled(status pbv2.Status)
 
-	// BytesTransferred tracks the total bytes transferred(incoming + outgoing) by the relay service
+	// BytesTransferred tracks the total bytes transferred by the relay service
 	BytesTransferred(cnt int)
 }
 
@@ -182,81 +161,108 @@ func (mt *metricsTracer) RelayStatus(enabled bool) {
 	}
 }
 
-func (mt *metricsTracer) ConnectionRequestReceived() {
-	tags := metricshelper.GetStringSlice()
-	defer metricshelper.PutStringSlice(tags)
-	*tags = append(*tags, typeReceived)
-
-	connectionTotal.WithLabelValues(*tags...).Add(1)
-}
-
 func (mt *metricsTracer) ConnectionOpened() {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
-	*tags = append(*tags, typeOpened)
+	*tags = append(*tags, "opened")
 
-	connectionTotal.WithLabelValues(*tags...).Add(1)
+	connectionsTotal.WithLabelValues(*tags...).Add(1)
 }
 
 func (mt *metricsTracer) ConnectionClosed(d time.Duration) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
-	*tags = append(*tags, typeClosed)
+	*tags = append(*tags, "closed")
 
-	connectionTotal.WithLabelValues(*tags...).Add(1)
+	connectionsTotal.WithLabelValues(*tags...).Add(1)
 	connectionDurationSeconds.Observe(d.Seconds())
 }
 
-func (mt *metricsTracer) ConnectionRequestHandled(status string, rejectionReason string) {
+func (mt *metricsTracer) ConnectionRequestHandled(status pbv2.Status) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
-	*tags = append(*tags, status)
 
-	connectionRequestStatusTotal.WithLabelValues(*tags...).Add(1)
-	if status == requestStatusRejected {
+	respStatus := getResponseStatus(status)
+
+	*tags = append(*tags, respStatus)
+	connectionRequestResponseStatusTotal.WithLabelValues(*tags...).Add(1)
+	if respStatus == requestStatusRejected {
 		*tags = (*tags)[:0]
-		*tags = append(*tags, rejectionReason)
-		connectionRejectionTotal.WithLabelValues(*tags...).Add(1)
+		*tags = append(*tags, getRejectionReason(status))
+		connectionRejectionsTotal.WithLabelValues(*tags...).Add(1)
 	}
 }
 
-func (mt *metricsTracer) ReservationRequestReceived() {
+func (mt *metricsTracer) ReservationAllowed(isRenewal bool) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
-	*tags = append(*tags, typeReceived)
+	if isRenewal {
+		*tags = append(*tags, "renewed")
+	} else {
+		*tags = append(*tags, "opened")
+	}
 
-	reservationTotal.WithLabelValues(*tags...).Add(1)
-}
-
-func (mt *metricsTracer) ReservationOpened() {
-	tags := metricshelper.GetStringSlice()
-	defer metricshelper.PutStringSlice(tags)
-	*tags = append(*tags, typeOpened)
-
-	reservationTotal.WithLabelValues(*tags...).Add(1)
+	reservationsTotal.WithLabelValues(*tags...).Add(1)
 }
 
 func (mt *metricsTracer) ReservationClosed(cnt int) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
-	*tags = append(*tags, typeClosed)
+	*tags = append(*tags, "closed")
 
-	reservationTotal.WithLabelValues(*tags...).Add(float64(cnt))
+	reservationsTotal.WithLabelValues(*tags...).Add(float64(cnt))
 }
 
-func (mt *metricsTracer) ReservationRequestHandled(status string, rejectionReason string) {
+func (mt *metricsTracer) ReservationRequestHandled(status pbv2.Status) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
-	*tags = append(*tags, status)
 
-	reservationRequestStatusTotal.WithLabelValues(*tags...).Add(1)
-	if status == requestStatusRejected {
+	respStatus := getResponseStatus(status)
+
+	*tags = append(*tags, respStatus)
+	reservationRequestResponseStatusTotal.WithLabelValues(*tags...).Add(1)
+	if respStatus == requestStatusRejected {
 		*tags = (*tags)[:0]
-		*tags = append(*tags, rejectionReason)
-		reservationRejectedTotal.WithLabelValues(*tags...).Add(1)
+		*tags = append(*tags, getRejectionReason(status))
+		reservationRejectionsTotal.WithLabelValues(*tags...).Add(1)
 	}
 }
 
 func (mt *metricsTracer) BytesTransferred(cnt int) {
-	bytesTransferredTotal.Add(float64(cnt))
+	dataTransferredBytesTotal.Add(float64(cnt))
+}
+
+func getResponseStatus(status pbv2.Status) string {
+	responseStatus := "unknown"
+	switch status {
+	case pbv2.Status_RESERVATION_REFUSED,
+		pbv2.Status_RESOURCE_LIMIT_EXCEEDED,
+		pbv2.Status_PERMISSION_DENIED,
+		pbv2.Status_NO_RESERVATION,
+		pbv2.Status_MALFORMED_MESSAGE:
+
+		responseStatus = requestStatusRejected
+	case pbv2.Status_UNEXPECTED_MESSAGE, pbv2.Status_CONNECTION_FAILED:
+		responseStatus = requestStatusError
+	case pbv2.Status_OK:
+		responseStatus = requestStatusOK
+	}
+	return responseStatus
+}
+
+func getRejectionReason(status pbv2.Status) string {
+	reason := "unknown"
+	switch status {
+	case pbv2.Status_RESERVATION_REFUSED:
+		reason = "ip constraint violation"
+	case pbv2.Status_RESOURCE_LIMIT_EXCEEDED:
+		reason = "resource limit exceeded"
+	case pbv2.Status_PERMISSION_DENIED:
+		reason = "permission denied"
+	case pbv2.Status_NO_RESERVATION:
+		reason = "no reservation"
+	case pbv2.Status_MALFORMED_MESSAGE:
+		reason = "malformed message"
+	}
+	return reason
 }
