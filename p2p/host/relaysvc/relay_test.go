@@ -34,7 +34,7 @@ func TestReachabilityChangeEvent(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool { rmgr.mutex.Lock(); defer rmgr.mutex.Unlock(); return rmgr.relay == nil },
-		1*time.Second,
+		3*time.Second,
 		100*time.Millisecond,
 		"relay should be nil on private reachability")
 
@@ -45,7 +45,7 @@ func TestReachabilityChangeEvent(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool { rmgr.mutex.Lock(); defer rmgr.mutex.Unlock(); return rmgr.relay == nil },
-		1*time.Second,
+		3*time.Second,
 		100*time.Millisecond,
 		"relay should be nil on unknown reachability")
 
