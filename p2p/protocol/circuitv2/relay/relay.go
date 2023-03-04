@@ -105,17 +105,24 @@ func New(h host.Host, opts ...Option) (*Relay, error) {
 
 func (r *Relay) Close() error {
 	r.mx.Lock()
-	defer r.mx.Unlock()
 	if !r.closed {
 		r.closed = true
+		r.mx.Unlock()
+
 		r.host.RemoveStreamHandler(proto.ProtoIDv2Hop)
 		r.host.Network().StopNotify(r.notifiee)
 		r.scope.Done()
 		r.cancel()
+
+		r.mx.Lock()
 		for p := range r.rsvp {
 			r.host.ConnManager().UntagPeer(p, "relay-reservation")
 		}
+		r.mx.Unlock()
+
+		return nil
 	}
+	r.mx.Unlock()
 	return nil
 }
 
