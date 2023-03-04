@@ -51,6 +51,7 @@ type Relay struct {
 	constraints *constraints
 	scope       network.ResourceScopeSpan
 	notifiee    network.Notifiee
+	wg          sync.WaitGroup
 
 	mx     sync.Mutex
 	rsvp   map[peer.ID]time.Time
@@ -98,6 +99,8 @@ func New(h host.Host, opts ...Option) (*Relay, error) {
 	h.SetStreamHandler(proto.ProtoIDv2Hop, r.handleStream)
 	r.notifiee = &network.NotifyBundle{DisconnectedF: r.disconnected}
 	h.Network().Notify(r.notifiee)
+
+	r.wg.Add(1)
 	go r.background()
 
 	return r, nil
@@ -113,13 +116,7 @@ func (r *Relay) Close() error {
 		r.host.Network().StopNotify(r.notifiee)
 		r.scope.Done()
 		r.cancel()
-
-		r.mx.Lock()
-		for p := range r.rsvp {
-			r.host.ConnManager().UntagPeer(p, "relay-reservation")
-		}
-		r.mx.Unlock()
-
+		r.wg.Wait()
 		return nil
 	}
 	r.mx.Unlock()
@@ -571,6 +568,8 @@ func (r *Relay) background() {
 		case <-ticker.C:
 			r.gc()
 		case <-r.ctx.Done():
+			r.gc()
+			r.wg.Done()
 			return
 		}
 	}
@@ -583,7 +582,7 @@ func (r *Relay) gc() {
 	now := time.Now()
 
 	for p, expire := range r.rsvp {
-		if expire.Before(now) {
+		if r.closed || expire.Before(now) {
 			delete(r.rsvp, p)
 			r.host.ConnManager().UntagPeer(p, "relay-reservation")
 		}
