@@ -157,41 +157,56 @@ func (r *Relay) handleStream(s network.Stream) {
 
 	err := rd.ReadMsg(&msg)
 	if err != nil {
-		r.handleError(s, pbv2.Status_MALFORMED_MESSAGE)
+		err = r.writeResponse(s, pbv2.Status_MALFORMED_MESSAGE, nil, nil)
+		if err != nil {
+			log.Debugf("error writing relay response: %s", err)
+			s.Reset()
+			return
+		}
+		s.Close()
 		return
 	}
+
 	// reset stream deadline as message has been read
 	s.SetReadDeadline(time.Time{})
+	var status pbv2.Status
 	switch msg.GetType() {
 	case pbv2.HopMessage_RESERVE:
-		status := r.handleReserve(s)
+		status = r.handleReserve(s)
 		if r.metricsTracer != nil {
 			r.metricsTracer.ReservationRequestHandled(status)
 		}
 	case pbv2.HopMessage_CONNECT:
-		status := r.handleConnect(s, &msg)
+		status = r.handleConnect(s, &msg)
 		if r.metricsTracer != nil {
 			r.metricsTracer.ConnectionRequestHandled(status)
 		}
 	default:
-		r.handleError(s, pbv2.Status_MALFORMED_MESSAGE)
+		status = pbv2.Status_MALFORMED_MESSAGE
+	}
+	if status != pbv2.Status_OK {
+		log.Debugf("relay error: %s (%d)", pbv2.Status_name[int32(status)], status)
+		err = r.writeResponse(s, status, nil, nil)
+		if err != nil {
+			log.Debugf("error writing relay response: %s", err)
+			s.Reset()
+			return
+		}
+		s.Close()
 	}
 }
 
 func (r *Relay) handleReserve(s network.Stream) pbv2.Status {
-	defer s.Close()
 	p := s.Conn().RemotePeer()
 	a := s.Conn().RemoteMultiaddr()
 
 	if isRelayAddr(a) {
 		log.Debugf("refusing relay reservation for %s; reservation attempt over relay connection")
-		r.handleError(s, pbv2.Status_PERMISSION_DENIED)
 		return pbv2.Status_PERMISSION_DENIED
 	}
 
 	if r.acl != nil && !r.acl.AllowReserve(p, a) {
 		log.Debugf("refusing relay reservation for %s; permission denied", p)
-		r.handleError(s, pbv2.Status_PERMISSION_DENIED)
 		return pbv2.Status_PERMISSION_DENIED
 	}
 
@@ -201,7 +216,6 @@ func (r *Relay) handleReserve(s network.Stream) pbv2.Status {
 	if r.closed {
 		r.mx.Unlock()
 		log.Debugf("refusing relay reservation for %s; relay closed", p)
-		r.handleError(s, pbv2.Status_PERMISSION_DENIED)
 		return pbv2.Status_PERMISSION_DENIED
 	}
 	now := time.Now()
@@ -211,7 +225,6 @@ func (r *Relay) handleReserve(s network.Stream) pbv2.Status {
 		if err := r.constraints.AddReservation(p, a); err != nil {
 			r.mx.Unlock()
 			log.Debugf("refusing relay reservation for %s; IP constraint violation: %s", p, err)
-			r.handleError(s, pbv2.Status_RESERVATION_REFUSED)
 			return pbv2.Status_RESERVATION_REFUSED
 		}
 	}
@@ -231,9 +244,9 @@ func (r *Relay) handleReserve(s network.Stream) pbv2.Status {
 	// In that case, the reservation will just be garbage collected later.
 	if err := r.writeResponse(s, pbv2.Status_OK, r.makeReservationMsg(p, expire), r.makeLimitMsg(p)); err != nil {
 		log.Debugf("error writing reservation response; retracting reservation for %s", p)
-		s.Reset()
 		return pbv2.Status_CONNECTION_FAILED
 	}
+	s.Close()
 	return pbv2.Status_OK
 }
 
@@ -244,37 +257,31 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) pbv2.Statu
 	span, err := r.scope.BeginSpan()
 	if err != nil {
 		log.Debugf("failed to begin relay transaction: %s", err)
-		r.handleError(s, pbv2.Status_RESOURCE_LIMIT_EXCEEDED)
 		return pbv2.Status_RESOURCE_LIMIT_EXCEEDED
-	}
-
-	fail := func(status pbv2.Status) {
-		span.Done()
-		r.handleError(s, status)
 	}
 
 	// reserve buffers for the relay
 	if err := span.ReserveMemory(2*r.rc.BufferSize, network.ReservationPriorityHigh); err != nil {
 		log.Debugf("error reserving memory for relay: %s", err)
-		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED)
+		span.Done()
 		return pbv2.Status_RESOURCE_LIMIT_EXCEEDED
 	}
 
 	if isRelayAddr(a) {
 		log.Debugf("refusing connection from %s; connection attempt over relay connection")
-		fail(pbv2.Status_PERMISSION_DENIED)
+		span.Done()
 		return pbv2.Status_PERMISSION_DENIED
 	}
 
 	dest, err := util.PeerToPeerInfoV2(msg.GetPeer())
 	if err != nil {
-		fail(pbv2.Status_MALFORMED_MESSAGE)
+		span.Done()
 		return pbv2.Status_MALFORMED_MESSAGE
 	}
 
 	if r.acl != nil && !r.acl.AllowConnect(src, s.Conn().RemoteMultiaddr(), dest.ID) {
 		log.Debugf("refusing connection from %s to %s; permission denied", src, dest.ID)
-		fail(pbv2.Status_PERMISSION_DENIED)
+		span.Done()
 		return pbv2.Status_PERMISSION_DENIED
 	}
 
@@ -283,7 +290,7 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) pbv2.Statu
 	if !rsvp {
 		r.mx.Unlock()
 		log.Debugf("refusing connection from %s to %s; no reservation", src, dest.ID)
-		fail(pbv2.Status_NO_RESERVATION)
+		span.Done()
 		return pbv2.Status_NO_RESERVATION
 	}
 
@@ -291,7 +298,7 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) pbv2.Statu
 	if srcConns >= r.rc.MaxCircuits {
 		r.mx.Unlock()
 		log.Debugf("refusing connection from %s to %s; too many connections from %s", src, dest.ID, src)
-		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED)
+		span.Done()
 		return pbv2.Status_RESOURCE_LIMIT_EXCEEDED
 	}
 
@@ -299,7 +306,7 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) pbv2.Statu
 	if destConns >= r.rc.MaxCircuits {
 		r.mx.Unlock()
 		log.Debugf("refusing connection from %s to %s; too many connecitons to %s", src, dest.ID, dest.ID)
-		fail(pbv2.Status_RESOURCE_LIMIT_EXCEEDED)
+		span.Done()
 		return pbv2.Status_RESOURCE_LIMIT_EXCEEDED
 	}
 
@@ -332,14 +339,12 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) pbv2.Statu
 	if err != nil {
 		log.Debugf("error opening relay stream to %s: %s", dest.ID, err)
 		cleanup()
-		r.handleError(s, pbv2.Status_CONNECTION_FAILED)
 		return pbv2.Status_CONNECTION_FAILED
 	}
 
-	fail = func(status pbv2.Status) {
+	fail := func(status pbv2.Status) {
 		bs.Reset()
 		cleanup()
-		r.handleError(s, status)
 	}
 
 	if err := bs.Scope().SetService(ServiceName); err != nil {
@@ -375,7 +380,6 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) pbv2.Statu
 	}
 
 	stopmsg.Reset()
-
 	err = rd.ReadMsg(&stopmsg)
 	if err != nil {
 		log.Debugf("error reading stop response: %s", err.Error())
@@ -405,7 +409,6 @@ func (r *Relay) handleConnect(s network.Stream, msg *pbv2.HopMessage) pbv2.Statu
 	if err != nil {
 		log.Debugf("error writing relay response: %s", err)
 		bs.Reset()
-		s.Reset()
 		cleanup()
 		return pbv2.Status_CONNECTION_FAILED
 	}
@@ -545,17 +548,6 @@ func (r *Relay) copyWithBuffer(dst io.Writer, src io.Reader, buf []byte) (writte
 		}
 	}
 	return written, err
-}
-
-func (r *Relay) handleError(s network.Stream, status pbv2.Status) {
-	log.Debugf("relay error: %s (%d)", pbv2.Status_name[int32(status)], status)
-	err := r.writeResponse(s, status, nil, nil)
-	if err != nil {
-		s.Reset()
-		log.Debugf("error writing relay response: %s", err.Error())
-	} else {
-		s.Close()
-	}
 }
 
 func (r *Relay) writeResponse(s network.Stream, status pbv2.Status, rsvp *pbv2.Reservation, limit *pbv2.Limit) error {
