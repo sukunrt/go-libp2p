@@ -643,7 +643,7 @@
           },
           "editorMode": "code",
           "expr": "increase(libp2p_relaysvc_data_transferred_bytes_total[$__range])",
-          "legendFormat": "__auto",
+          "legendFormat": "data transferred",
           "range": true,
           "refId": "A"
         }
@@ -1138,8 +1138,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1211,8 +1210,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Relay Service",
+  "title": "libp2p Relay Service",
   "uid": "C6RUfAx4z",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
