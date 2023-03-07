@@ -136,7 +136,7 @@
       },
       "id": 2,
       "options": {
-        "alignValue": "left",
+        "alignValue": "center",
         "legend": {
           "displayMode": "list",
           "placement": "bottom",
@@ -1138,14 +1138,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
+                "color": "green",
+                "value": null
               }
             ]
-          }
+          },
+          "unit": "s"
         },
         "overrides": []
       },
@@ -1175,22 +1173,11 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.5, sum(rate(libp2p_relaysvc_connection_duration_seconds_bucket[$__rate_interval])) by (le))",
-          "legendFormat": "50th percentile",
+          "expr": "rate(libp2p_relaysvc_connection_duration_seconds_sum[$__range])/rate(libp2p_relaysvc_connection_duration_seconds_count[$__range])\n",
+          "hide": false,
+          "legendFormat": "avg",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum(rate(libp2p_relaysvc_connection_duration_seconds_bucket[$__rate_interval])) by (le))",
-          "hide": false,
-          "legendFormat": "99th percentile",
-          "range": true,
-          "refId": "C"
         }
       ],
       "title": "Connection Duration",
@@ -1212,6 +1199,6 @@
   "timezone": "",
   "title": "libp2p Relay Service",
   "uid": "C6RUfAx4z",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }
