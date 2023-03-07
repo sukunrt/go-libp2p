@@ -1175,7 +1175,7 @@
           "editorMode": "code",
           "expr": "rate(libp2p_relaysvc_connection_duration_seconds_sum[$__range])/rate(libp2p_relaysvc_connection_duration_seconds_count[$__range])\n",
           "hide": false,
-          "legendFormat": "avg",
+          "legendFormat": "rolling average",
           "range": true,
           "refId": "A"
         }
@@ -1199,6 +1199,6 @@
   "timezone": "",
   "title": "libp2p Relay Service",
   "uid": "C6RUfAx4z",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }
