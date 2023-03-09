@@ -126,10 +126,8 @@ type idService struct {
 
 	connsMu sync.RWMutex
 	// The conns map contains all connections we're currently handling.
-	// Connections are inserted as soon as they're available in the swarm, and - crucially -
-	// before any stream can be opened or accepted on that connection.
+	// Connections are inserted as soon as they're available in the swarm
 	// Connections are removed from the map when the connection disconnects.
-	// It is therefore safe to assume that a connection was (recently) closed if there's no entry in this map.
 	conns map[network.Conn]entry
 
 	addrMu sync.Mutex
@@ -894,8 +892,6 @@ func (nn *netNotifiee) IDService() *idService {
 }
 
 func (nn *netNotifiee) Connected(_ network.Network, c network.Conn) {
-	// We rely on this notification being received before we receive any incoming streams on the connection.
-	// The swarm implementation guarantees this.
 	ids := nn.IDService()
 
 	ids.connsMu.Lock()
