@@ -140,7 +140,7 @@ func (rf *relayFinder) background(ctx context.Context) {
 		leastFrequentInterval = rf.conf.maxCandidateAge
 	}
 	if rsvpRefreshInterval > leastFrequentInterval {
-		leastFrequentInterval = rf.conf.maxCandidateAge
+		leastFrequentInterval = rsvpRefreshInterval
 	}
 
 	now := rf.conf.clock.Now()
