@@ -465,19 +465,12 @@ func (rf *relayFinder) tryNode(ctx context.Context, pi peer.AddrInfo) (supportsR
 // This function makes sure that we only run one instance of maybeConnectToRelay at once, and buffers
 // exactly one more trigger event to run maybeConnectToRelay.
 func (rf *relayFinder) handleNewCandidates(ctx context.Context) {
-	sem := make(chan struct{}, 1)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-rf.maybeConnectToRelayTrigger:
-			select {
-			case <-ctx.Done():
-				return
-			case sem <- struct{}{}:
-			}
 			rf.maybeConnectToRelay(ctx)
-			<-sem
 		}
 	}
 }
