@@ -77,6 +77,8 @@ type relayFinder struct {
 
 	cachedAddrs       []ma.Multiaddr
 	cachedAddrsExpiry time.Time
+
+	metricsTracer MetricsTracer
 }
 
 func newRelayFinder(host *basic.BasicHost, peerSource PeerSource, conf *config) *relayFinder {
@@ -96,6 +98,7 @@ func newRelayFinder(host *basic.BasicHost, peerSource PeerSource, conf *config) 
 		maybeRequestNewCandidates:  make(chan struct{}, 1),
 		relays:                     make(map[peer.ID]*circuitv2.Reservation),
 		relayUpdated:               make(chan struct{}, 1),
+		metricsTracer:              &wrappedMetricsTracer{conf.metricsTracer},
 	}
 }
 
@@ -180,6 +183,7 @@ func (rf *relayFinder) background(ctx context.Context) {
 
 			if push {
 				rf.clearCachedAddrsAndSignalAddressChange()
+				rf.metricsTracer.ReservationEnded()
 			}
 		case <-rf.candidateFound:
 			rf.notifyMaybeConnectToRelay()
@@ -202,6 +206,8 @@ func (rf *relayFinder) clearCachedAddrsAndSignalAddressChange() {
 	rf.cachedAddrs = nil
 	rf.relayMx.Unlock()
 	rf.host.SignalAddressChange()
+
+	rf.metricsTracer.RelayAddressUpdated()
 }
 
 func (rf *relayFinder) runScheduledWork(ctx context.Context, now time.Time, scheduledWork *scheduledWorkTimes, peerSourceRateLimiter chan<- struct{}) time.Time {
@@ -248,6 +254,8 @@ func (rf *relayFinder) runScheduledWork(ctx context.Context, now time.Time, sche
 		nextTime = nextTime.Add(1) // avoids an infinite loop
 	}
 
+	rf.metricsTracer.ScheduledWorkUpdated(scheduledWork)
+
 	return nextTime
 }
 
@@ -267,10 +275,8 @@ func (rf *relayFinder) clearOldCandidates(now time.Time) time.Time {
 				nextTime = expiry
 			}
 		} else {
-			deleted = true
 			log.Debugw("deleting candidate due to age", "id", id)
-			delete(rf.candidates, id)
-
+			rf.removeCandidate(id)
 		}
 	}
 	if deleted {
@@ -399,22 +405,29 @@ func (rf *relayFinder) handleNewNode(ctx context.Context, pi peer.AddrInfo) (add
 	supportsV2, err := rf.tryNode(ctx, pi)
 	if err != nil {
 		log.Debugf("node %s not accepted as a candidate: %s", pi.ID, err)
+		if err == errProtocolNotSupported {
+			rf.metricsTracer.CandidateChecked(false)
+		}
 		return false
 	}
+	rf.metricsTracer.CandidateChecked(true)
+
 	rf.candidateMx.Lock()
 	if len(rf.candidates) > rf.conf.maxCandidates {
 		rf.candidateMx.Unlock()
 		return false
 	}
 	log.Debugw("node supports relay protocol", "peer", pi.ID, "supports circuit v2", supportsV2)
-	rf.candidates[pi.ID] = &candidate{
+	rf.addCandidate(&candidate{
 		added:           rf.conf.clock.Now(),
 		ai:              pi,
 		supportsRelayV2: supportsV2,
-	}
+	})
 	rf.candidateMx.Unlock()
 	return true
 }
+
+var errProtocolNotSupported = errors.New("doesn't speak circuit v2")
 
 // tryNode checks if a peer actually supports either circuit v2.
 // It does not modify any internal state.
@@ -456,7 +469,7 @@ func (rf *relayFinder) tryNode(ctx context.Context, pi peer.AddrInfo) (supportsR
 		return false, fmt.Errorf("error checking relay protocol support for peer %s: %w", pi.ID, err)
 	}
 	if len(protos) == 0 {
-		return false, errors.New("doesn't speak circuit v2")
+		return false, errProtocolNotSupported
 	}
 	return true, nil
 }
@@ -515,7 +528,7 @@ func (rf *relayFinder) maybeConnectToRelay(ctx context.Context) {
 		rf.relayMx.Unlock()
 		if usingRelay {
 			rf.candidateMx.Lock()
-			delete(rf.candidates, id)
+			rf.removeCandidate(id)
 			rf.candidateMx.Unlock()
 			rf.notifyMaybeNeedNewCandidates()
 			continue
@@ -524,6 +537,7 @@ func (rf *relayFinder) maybeConnectToRelay(ctx context.Context) {
 		if err != nil {
 			log.Debugw("failed to connect to relay", "peer", id, "error", err)
 			rf.notifyMaybeNeedNewCandidates()
+			rf.metricsTracer.ReservationRequestFinished(false, false)
 			continue
 		}
 		log.Debugw("adding new relay", "id", id)
@@ -539,6 +553,8 @@ func (rf *relayFinder) maybeConnectToRelay(ctx context.Context) {
 		case rf.relayUpdated <- struct{}{}:
 		default:
 		}
+
+		rf.metricsTracer.ReservationRequestFinished(false, true)
 
 		if numRelays >= rf.conf.desiredRelays {
 			break
@@ -558,7 +574,7 @@ func (rf *relayFinder) connectToRelay(ctx context.Context, cand *candidate) (*ci
 	if rf.host.Network().Connectedness(id) != network.Connected {
 		if err := rf.host.Connect(ctx, cand.ai); err != nil {
 			rf.candidateMx.Lock()
-			delete(rf.candidates, cand.ai.ID)
+			rf.removeCandidate(cand.ai.ID)
 			rf.candidateMx.Unlock()
 			return nil, fmt.Errorf("failed to connect: %w", err)
 		}
@@ -575,7 +591,7 @@ func (rf *relayFinder) connectToRelay(ctx context.Context, cand *candidate) (*ci
 		}
 	}
 	rf.candidateMx.Lock()
-	delete(rf.candidates, id)
+	rf.removeCandidate(id)
 	rf.candidateMx.Unlock()
 	return rsvp, err
 }
@@ -591,7 +607,12 @@ func (rf *relayFinder) refreshReservations(ctx context.Context, now time.Time) b
 		}
 
 		p := p
-		g.Go(func() error { return rf.refreshRelayReservation(ctx, p) })
+		g.Go(func() error {
+			err := rf.refreshRelayReservation(ctx, p)
+			rf.metricsTracer.ReservationRequestFinished(true, err != nil)
+
+			return err
+		})
 	}
 	rf.relayMx.Unlock()
 
@@ -603,19 +624,22 @@ func (rf *relayFinder) refreshRelayReservation(ctx context.Context, p peer.ID) e
 	rsvp, err := circuitv2.Reserve(ctx, rf.host, peer.AddrInfo{ID: p})
 
 	rf.relayMx.Lock()
-	defer rf.relayMx.Unlock()
-
 	if err != nil {
 		log.Debugw("failed to refresh relay slot reservation", "relay", p, "error", err)
-
+		_, exists := rf.relays[p]
 		delete(rf.relays, p)
 		// unprotect the connection
 		rf.host.ConnManager().Unprotect(p, autorelayTag)
+		rf.relayMx.Unlock()
+		if exists {
+			rf.metricsTracer.ReservationEnded()
+		}
 		return err
 	}
 
 	log.Debugw("refreshed relay slot reservation", "relay", p)
 	rf.relays[p] = rsvp
+	rf.relayMx.Unlock()
 	return nil
 }
 
@@ -623,6 +647,23 @@ func (rf *relayFinder) refreshRelayReservation(ctx context.Context, p peer.ID) e
 func (rf *relayFinder) usingRelay(p peer.ID) bool {
 	_, ok := rf.relays[p]
 	return ok
+}
+
+// addCandidates adds a candidate to the candidates set. Assumes caller holds candidateMx mutex
+func (rf *relayFinder) addCandidate(cand *candidate) {
+	_, exists := rf.candidates[cand.ai.ID]
+	rf.candidates[cand.ai.ID] = cand
+	if !exists {
+		rf.metricsTracer.CandidateAdded()
+	}
+}
+
+func (rf *relayFinder) removeCandidate(id peer.ID) {
+	_, exists := rf.candidates[id]
+	if exists {
+		delete(rf.candidates, id)
+		rf.metricsTracer.CandidateRemoved()
+	}
 }
 
 // selectCandidates returns an ordered slice of relay candidates.
@@ -669,9 +710,10 @@ func (rf *relayFinder) relayAddrs(addrs []ma.Multiaddr) []ma.Multiaddr {
 	}
 
 	// add relay specific addrs to the list
+	relayAddrCnt := 0
 	for p := range rf.relays {
 		addrs := cleanupAddressSet(rf.host.Peerstore().Addrs(p))
-
+		relayAddrCnt += len(addrs)
 		circuit := ma.StringCast(fmt.Sprintf("/p2p/%s/p2p-circuit", p.Pretty()))
 		for _, addr := range addrs {
 			pub := addr.Encapsulate(circuit)
@@ -682,6 +724,7 @@ func (rf *relayFinder) relayAddrs(addrs []ma.Multiaddr) []ma.Multiaddr {
 	rf.cachedAddrs = raddrs
 	rf.cachedAddrsExpiry = rf.conf.clock.Now().Add(30 * time.Second)
 
+	rf.metricsTracer.RelayAddressCount(relayAddrCnt)
 	return raddrs
 }
 

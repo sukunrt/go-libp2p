@@ -42,6 +42,8 @@ type config struct {
 	// see WithMaxCandidateAge
 	maxCandidateAge  time.Duration
 	setMinCandidates bool
+	// see WithMetricsTracer
+	metricsTracer MetricsTracer
 }
 
 var defaultConfig = config{
@@ -174,6 +176,14 @@ func WithClock(cl clock.Clock) Option {
 func WithMinInterval(interval time.Duration) Option {
 	return func(c *config) error {
 		c.minInterval = interval
+		return nil
+	}
+}
+
+// WithMetricsTracer configures autorelay to use mt to track metrics
+func WithMetricsTracer(mt MetricsTracer) Option {
+	return func(c *config) error {
+		c.metricsTracer = mt
 		return nil
 	}
 }

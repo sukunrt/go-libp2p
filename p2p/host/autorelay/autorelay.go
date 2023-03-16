@@ -30,6 +30,8 @@ type AutoRelay struct {
 
 	host   host.Host
 	addrsF basic.AddrsFactory
+
+	metricsTracer MetricsTracer
 }
 
 func NewAutoRelay(bhost *basic.BasicHost, opts ...Option) (*AutoRelay, error) {
@@ -47,6 +49,7 @@ func NewAutoRelay(bhost *basic.BasicHost, opts ...Option) (*AutoRelay, error) {
 	r.ctx, r.ctxCancel = context.WithCancel(context.Background())
 	r.conf = &conf
 	r.relayFinder = newRelayFinder(bhost, conf.peerSource, &conf)
+	r.metricsTracer = &wrappedMetricsTracer{conf.metricsTracer}
 	bhost.AddrsFactory = r.hostAddrs
 
 	return r, nil
@@ -82,9 +85,12 @@ func (r *AutoRelay) background() {
 			case network.ReachabilityPrivate, network.ReachabilityUnknown:
 				if err := r.relayFinder.Start(); err != nil {
 					log.Errorw("failed to start relay finder", "error", err)
+				} else {
+					r.metricsTracer.RelayFinderStatus(true)
 				}
 			case network.ReachabilityPublic:
 				r.relayFinder.Stop()
+				r.metricsTracer.RelayFinderStatus(false)
 			}
 			r.mx.Lock()
 			r.status = evt.Reachability
