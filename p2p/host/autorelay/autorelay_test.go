@@ -224,6 +224,7 @@ func TestBackoff(t *testing.T) {
 	defer h.Close()
 
 	require.Eventually(t, func() bool {
+		cl.Add(1)
 		return reservations.Load() == 1
 	}, 10*time.Second, 20*time.Millisecond, "reservations load should be 1 was %d", reservations.Load())
 	// make sure we don't add any relays yet
@@ -335,6 +336,7 @@ func TestMaxAge(t *testing.T) {
 	defer h.Close()
 
 	require.Eventually(t, func() bool {
+		cl.Add(1)
 		return numRelays(h) > 0
 	}, 10*time.Second, 100*time.Millisecond)
 	relays := usedRelays(h)
@@ -405,6 +407,7 @@ func TestReconnectToStaticRelays(t *testing.T) {
 
 	cl.Add(time.Minute)
 	require.Eventually(t, func() bool {
+		cl.Add(1)
 		return numRelays(h) == 1
 	}, 10*time.Second, 100*time.Millisecond)
 
@@ -440,13 +443,15 @@ func TestMinInterval(t *testing.T) {
 		autorelay.WithMinCandidates(2),
 		autorelay.WithNumRelays(1),
 		autorelay.WithBootDelay(time.Hour),
-		autorelay.WithMinInterval(500*time.Millisecond),
+		autorelay.WithMinInterval(2*time.Second),
 	)
 	defer h.Close()
 
+	// ensure that there is no relay before MinInterval
 	cl.Add(500 * time.Millisecond)
-	// The second call to peerSource should happen after 1 second
-	require.Never(t, func() bool { return numRelays(h) > 0 }, 500*time.Millisecond, 100*time.Millisecond)
-	cl.Add(500 * time.Millisecond)
+	require.Never(t, func() bool { cl.Add(1); return numRelays(h) > 0 }, 2*time.Second, 100*time.Millisecond)
+
+	// The second call to peerSource should happen after 2 s
+	cl.Add(2 * time.Second)
 	require.Eventually(t, func() bool { return numRelays(h) > 0 }, 10*time.Second, 100*time.Millisecond)
 }

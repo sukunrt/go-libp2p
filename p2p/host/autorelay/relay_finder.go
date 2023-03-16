@@ -100,19 +100,19 @@ func newRelayFinder(host *basic.BasicHost, peerSource PeerSource, conf *config) 
 }
 
 type scheduledWorkTimes struct {
-	leastFrequentInterval       time.Duration
-	nextRefresh                 time.Time
-	nextBackoff                 time.Time
-	nextOldCandidateCheck       time.Time
-	nextAllowedCallToPeerSource time.Time
+	leastFrequentInterval time.Duration
+	nextRefresh           time.Time
+	nextBackoff           time.Time
+	nextOldCandidateCheck time.Time
 }
 
 func (rf *relayFinder) background(ctx context.Context) {
 	peerSourceRateLimiter := make(chan struct{}, 1)
+	peerSourceCalled := make(chan struct{}, 1)
 	rf.refCount.Add(1)
 	go func() {
 		defer rf.refCount.Done()
-		rf.findNodes(ctx, peerSourceRateLimiter)
+		rf.findNodes(ctx, peerSourceRateLimiter, peerSourceCalled)
 	}()
 
 	rf.refCount.Add(1)
@@ -146,15 +146,18 @@ func (rf *relayFinder) background(ctx context.Context) {
 	now := rf.conf.clock.Now()
 
 	scheduledWork := &scheduledWorkTimes{
-		leastFrequentInterval:       leastFrequentInterval,
-		nextRefresh:                 now.Add(rsvpRefreshInterval),
-		nextBackoff:                 now.Add(rf.conf.backoff / 5),
-		nextOldCandidateCheck:       now.Add(rf.conf.maxCandidateAge / 5),
-		nextAllowedCallToPeerSource: now.Add(-time.Second), // allow immediately
+		leastFrequentInterval: leastFrequentInterval,
+		nextRefresh:           now.Add(rsvpRefreshInterval),
+		nextBackoff:           now.Add(rf.conf.backoff / 5),
+		nextOldCandidateCheck: now.Add(rf.conf.maxCandidateAge / 5),
 	}
 
 	workTimer := rf.conf.clock.Timer(rf.runScheduledWork(ctx, now, scheduledWork, peerSourceRateLimiter).Sub(now))
 	defer workTimer.Stop()
+
+	peerSourceTimer := rf.conf.clock.Timer(-time.Second) // Allow immediately
+	peerSourceTimerRunning := true
+	defer peerSourceTimer.Stop()
 
 	for {
 		select {
@@ -191,6 +194,15 @@ func (rf *relayFinder) background(ctx context.Context) {
 			now := rf.conf.clock.Now()
 			nextTime := rf.runScheduledWork(ctx, now, scheduledWork, peerSourceRateLimiter)
 			workTimer.Reset(nextTime.Sub(now))
+		case <-peerSourceTimer.C:
+			peerSourceRateLimiter <- struct{}{}
+			peerSourceTimerRunning = false
+		case <-peerSourceCalled:
+			if peerSourceTimerRunning && !peerSourceTimer.Stop() {
+				<-peerSourceTimer.C
+			}
+			peerSourceTimer.Reset(rf.conf.minInterval)
+			peerSourceTimerRunning = true
 		case <-ctx.Done():
 			return
 		}
@@ -222,14 +234,6 @@ func (rf *relayFinder) runScheduledWork(ctx context.Context, now time.Time, sche
 		scheduledWork.nextOldCandidateCheck = rf.clearOldCandidates(now)
 	}
 
-	if now.After(scheduledWork.nextAllowedCallToPeerSource) {
-		scheduledWork.nextAllowedCallToPeerSource = scheduledWork.nextAllowedCallToPeerSource.Add(rf.conf.minInterval)
-		select {
-		case peerSourceRateLimiter <- struct{}{}:
-		default:
-		}
-	}
-
 	// Find the next time we need to run scheduled work.
 	if scheduledWork.nextRefresh.Before(nextTime) {
 		nextTime = scheduledWork.nextRefresh
@@ -239,9 +243,6 @@ func (rf *relayFinder) runScheduledWork(ctx context.Context, now time.Time, sche
 	}
 	if scheduledWork.nextOldCandidateCheck.Before(nextTime) {
 		nextTime = scheduledWork.nextOldCandidateCheck
-	}
-	if scheduledWork.nextAllowedCallToPeerSource.Before(nextTime) {
-		nextTime = scheduledWork.nextAllowedCallToPeerSource
 	}
 	if nextTime == now {
 		// Only happens in CI with a mock clock
@@ -307,7 +308,7 @@ func (rf *relayFinder) clearBackoff(now time.Time) time.Time {
 // It garbage collects old entries, so that nodes doesn't overflow.
 // This makes sure that as soon as we need to find relay candidates, we have them available.
 // peerSourceRateLimiter is used to limit how often we call the peer source.
-func (rf *relayFinder) findNodes(ctx context.Context, peerSourceRateLimiter <-chan struct{}) {
+func (rf *relayFinder) findNodes(ctx context.Context, peerSourceRateLimiter <-chan struct{}, peerSourceCalled chan<- struct{}) {
 	var peerChan <-chan peer.AddrInfo
 	var wg sync.WaitGroup
 	for {
@@ -319,6 +320,7 @@ func (rf *relayFinder) findNodes(ctx context.Context, peerSourceRateLimiter <-ch
 			select {
 			case <-peerSourceRateLimiter:
 				peerChan = rf.peerSource(ctx, rf.conf.maxCandidates)
+				peerSourceCalled <- struct{}{}
 			case <-ctx.Done():
 				return
 			}
