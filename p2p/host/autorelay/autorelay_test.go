@@ -443,7 +443,7 @@ func TestMinInterval(t *testing.T) {
 		autorelay.WithMinCandidates(2),
 		autorelay.WithNumRelays(1),
 		autorelay.WithBootDelay(time.Hour),
-		autorelay.WithMinInterval(2*time.Second),
+		autorelay.WithMinInterval(500*time.Millisecond),
 	)
 	defer h.Close()
 
@@ -451,6 +451,6 @@ func TestMinInterval(t *testing.T) {
 	require.Never(t, func() bool { cl.Add(1); return numRelays(h) > 0 }, 2*time.Second, 100*time.Millisecond)
 
 	// The second call to peerSource should happen after 2 s
-	cl.Add(2 * time.Second)
+	cl.Add(500 * time.Millisecond)
 	require.Eventually(t, func() bool { return numRelays(h) > 0 }, 10*time.Second, 100*time.Millisecond)
 }
