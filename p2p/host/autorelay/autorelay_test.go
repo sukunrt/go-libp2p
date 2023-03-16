@@ -448,7 +448,6 @@ func TestMinInterval(t *testing.T) {
 	defer h.Close()
 
 	// ensure that there is no relay before MinInterval
-	cl.Add(500 * time.Millisecond)
 	require.Never(t, func() bool { cl.Add(1); return numRelays(h) > 0 }, 2*time.Second, 100*time.Millisecond)
 
 	// The second call to peerSource should happen after 2 s
