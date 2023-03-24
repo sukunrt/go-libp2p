@@ -252,6 +252,12 @@ func NewHost(n network.Network, opts *HostOpts) (*BasicHost, error) {
 	}
 
 	if opts.EnableHolePunching {
+		if opts.EnableMetrics {
+			hpOpts := []holepunch.Option{
+				holepunch.WithMetricsTracer(holepunch.NewMetricsTracer(holepunch.WithRegisterer(opts.PrometheusRegisterer)))}
+			opts.HolePunchingOptions = append(hpOpts, opts.HolePunchingOptions...)
+
+		}
 		h.hps, err = holepunch.NewService(h, h.ids, opts.HolePunchingOptions...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create hole punch service: %w", err)
