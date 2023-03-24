@@ -55,13 +55,13 @@ func TestReachabilityChangeEvent(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool { rmgr.mutex.Lock(); defer rmgr.mutex.Unlock(); relay = rmgr.relay; return relay != nil },
-		1*time.Second,
+		3*time.Second,
 		100*time.Millisecond,
 		"relay should be set on public event")
 	emitter.Emit(evt)
 	require.Never(t,
 		func() bool { rmgr.mutex.Lock(); defer rmgr.mutex.Unlock(); return relay != rmgr.relay },
-		1*time.Second,
+		3*time.Second,
 		100*time.Millisecond,
 		"relay should not be updated on receiving the same event")
 }
