@@ -31,8 +31,8 @@ type AmbientAutoNAT struct {
 	ctxCancel         context.CancelFunc // is closed when Close is called
 	backgroundRunning chan struct{}      // is closed when the background go routine exits
 
-	inboundConn  chan network.Conn
-	observations chan network.Reachability
+	inboundConn   chan network.Conn
+	dialResponses chan error
 	// status is an autoNATResult reflecting current status.
 	status atomic.Pointer[network.Reachability]
 	// Reflects the confidence on of the NATStatus being private, as a single
@@ -107,7 +107,7 @@ func New(h host.Host, options ...Option) (AutoNAT, error) {
 		host:              h,
 		config:            conf,
 		inboundConn:       make(chan network.Conn, 5),
-		observations:      make(chan network.Reachability, 1),
+		dialResponses:     make(chan error, 5),
 
 		emitReachabilityChanged: emitReachabilityChanged,
 		service:                 service,
@@ -198,11 +198,11 @@ func (as *AmbientAutoNAT) background() {
 			}
 
 		// probe finished.
-		case result, ok := <-as.observations:
+		case err, ok := <-as.dialResponses:
 			if !ok {
 				return
 			}
-			as.recordObservation(result)
+			as.handleDialResponse(err)
 		case <-timer.C:
 			peer := as.getPeerToProbe()
 			as.tryProbe(peer)
@@ -269,8 +269,31 @@ func (as *AmbientAutoNAT) scheduleProbe() time.Duration {
 	return nextProbe.Sub(fixedNow)
 }
 
-// Update the current status based on an observed result.
+// handleDialResponse updates the current status based on dial response.
+func (as *AmbientAutoNAT) handleDialResponse(dialErr error) {
+	var observation network.Reachability
+	switch {
+	case dialErr == nil:
+		observation = network.ReachabilityPublic
+	case IsDialError(dialErr):
+		observation = network.ReachabilityPrivate
+	case IsDialRefused(dialErr):
+		// a dial may be refused for reasons like being rate limited. We don't want to change our NAT status based
+		// on this. We just schedule the next probe sooner
+		if as.confidence == maxConfidence {
+			as.confidence--
+		}
+		return
+	default:
+		observation = network.ReachabilityUnknown
+	}
+
+	as.recordObservation(observation)
+}
+
+// recordObservation updates NAT status and confidence
 func (as *AmbientAutoNAT) recordObservation(observation network.Reachability) {
+
 	currentStatus := *as.status.Load()
 
 	if observation == network.ReachabilityPublic {
@@ -359,21 +382,10 @@ func (as *AmbientAutoNAT) probe(pi *peer.AddrInfo) {
 	defer cancel()
 
 	err := cli.DialBack(ctx, pi.ID)
-
-	var result network.Reachability
-	switch {
-	case err == nil:
-		log.Debugf("Dialback through %s successful", pi.ID.Pretty())
-		result = network.ReachabilityPublic
-	case IsDialError(err):
-		log.Debugf("Dialback through %s failed", pi.ID.Pretty())
-		result = network.ReachabilityPrivate
-	default:
-		result = network.ReachabilityUnknown
-	}
+	log.Debugf("Dialback through peer %s completed: err: %s", pi.ID, err)
 
 	select {
-	case as.observations <- result:
+	case as.dialResponses <- err:
 	case <-as.ctx.Done():
 		return
 	}
@@ -411,8 +423,7 @@ func (as *AmbientAutoNAT) getPeerToProbe() peer.ID {
 		return ""
 	}
 
-	shufflePeers(candidates)
-	return candidates[0]
+	return candidates[rand.Intn(len(candidates))]
 }
 
 func (as *AmbientAutoNAT) Close() error {
@@ -422,13 +433,6 @@ func (as *AmbientAutoNAT) Close() error {
 	}
 	<-as.backgroundRunning
 	return nil
-}
-
-func shufflePeers(peers []peer.ID) {
-	for i := range peers {
-		j := rand.Intn(i + 1)
-		peers[i], peers[j] = peers[j], peers[i]
-	}
 }
 
 // Status returns the AutoNAT observed reachability status.
