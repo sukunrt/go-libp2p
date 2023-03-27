@@ -34,10 +34,20 @@ var (
 		},
 		[]string{"side"},
 	)
+	publicAddrsCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Name:      "local_addresses_count",
+			Help:      "Public Address Count for ipversion, transport",
+		},
+		[]string{"ipv", "transport"},
+	)
+
 	collectors = []prometheus.Collector{
 		directDialsTotal,
 		holePunchOutcomesTotal,
 		holePunchNoSuitableAddressTotal,
+		publicAddrsCount,
 	}
 )
 
@@ -46,7 +56,9 @@ type MetricsTracer interface {
 	DirectDialFinished(success bool)
 }
 
-type metricsTracer struct{}
+type metricsTracer struct {
+	addrCounts map[string]map[string]int
+}
 
 var _ MetricsTracer = &metricsTracer{}
 
@@ -70,11 +82,15 @@ func NewMetricsTracer(opts ...MetricsTracerOption) MetricsTracer {
 		opt(setting)
 	}
 	metricshelper.RegisterCollectors(setting.reg, collectors...)
-	return &metricsTracer{}
+	addrCounts := make(map[string]map[string]int)
+	for _, ipv := range []string{"ip4", "ip6", "unknown"} {
+		addrCounts[ipv] = make(map[string]int)
+	}
+	return &metricsTracer{addrCounts: addrCounts}
 }
 
 func (mt *metricsTracer) HolePunchFinished(side string, numAttempts int,
-	theirAddrs []ma.Multiaddr, ourAddrs []ma.Multiaddr, directConn network.ConnMultiaddrs) {
+	remoteAddrs []ma.Multiaddr, localAddrs []ma.Multiaddr, directConn network.ConnMultiaddrs) {
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
 
@@ -84,17 +100,25 @@ func (mt *metricsTracer) HolePunchFinished(side string, numAttempts int,
 		dipv = metricshelper.GetIPVersion(directConn.LocalMultiaddr())
 		dtransport = metricshelper.GetTransport(directConn.LocalMultiaddr())
 	}
+
+	// Refresh Address Counts
+	for _, m := range mt.addrCounts {
+		for transport := range m {
+			m[transport] = 0
+		}
+	}
+
 	match := false
-	for _, ta := range theirAddrs {
-		tipv := metricshelper.GetIPVersion(ta)
-		ttransport := metricshelper.GetTransport(ta)
-		for _, oa := range ourAddrs {
-			oipv := metricshelper.GetIPVersion(oa)
-			otransport := metricshelper.GetTransport(oa)
-			if tipv == oipv && ttransport == otransport {
+	for _, la := range localAddrs {
+		lipv := metricshelper.GetIPVersion(la)
+		ltransport := metricshelper.GetTransport(la)
+		for _, ra := range remoteAddrs {
+			ripv := metricshelper.GetIPVersion(ra)
+			rtransport := metricshelper.GetTransport(ra)
+			if ripv == lipv && rtransport == ltransport {
 				match = true
-				*tags = append(*tags, tipv, ttransport)
-				if directConn != nil && dipv == tipv && dtransport == ttransport {
+				*tags = append(*tags, ripv, rtransport)
+				if directConn != nil && dipv == ripv && dtransport == rtransport {
 					*tags = append(*tags, "success")
 				} else {
 					*tags = append(*tags, "failed")
@@ -104,11 +128,20 @@ func (mt *metricsTracer) HolePunchFinished(side string, numAttempts int,
 				break
 			}
 		}
+		mt.addrCounts[lipv][ltransport]++
 	}
 
 	if !match {
 		*tags = (*tags)[:1]
 		holePunchNoSuitableAddressTotal.WithLabelValues(*tags...).Inc()
+	}
+
+	for ipv, m := range mt.addrCounts {
+		for transport, cnt := range m {
+			*tags = (*tags)[:0]
+			*tags = append(*tags, ipv, transport)
+			publicAddrsCount.WithLabelValues(*tags...).Set(float64(cnt))
+		}
 	}
 }
 
