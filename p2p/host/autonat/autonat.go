@@ -45,7 +45,6 @@ type AmbientAutoNAT struct {
 	lastProbeTry time.Time
 	lastProbe    time.Time
 	recentProbes map[peer.ID]time.Time
-	retryProbe   bool
 
 	service *autoNATService
 
@@ -169,6 +168,7 @@ func (as *AmbientAutoNAT) background() {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	timerRunning := true
+	retryProbe := false
 	for {
 		select {
 		// new inbound connection.
@@ -204,7 +204,7 @@ func (as *AmbientAutoNAT) background() {
 				return
 			}
 			if IsDialRefused(err) {
-				as.retryProbe = true
+				retryProbe = true
 			} else {
 				as.handleDialResponse(err)
 			}
@@ -212,7 +212,7 @@ func (as *AmbientAutoNAT) background() {
 			peer := as.getPeerToProbe()
 			as.tryProbe(peer)
 			timerRunning = false
-			as.retryProbe = false
+			retryProbe = false
 		case <-as.ctx.Done():
 			return
 		}
@@ -221,7 +221,7 @@ func (as *AmbientAutoNAT) background() {
 		if timerRunning && !timer.Stop() {
 			<-timer.C
 		}
-		timer.Reset(as.scheduleProbe())
+		timer.Reset(as.scheduleProbe(retryProbe))
 		timerRunning = true
 	}
 }
@@ -236,11 +236,11 @@ func (as *AmbientAutoNAT) cleanupRecentProbes() {
 }
 
 // scheduleProbe calculates when the next probe should be scheduled for.
-func (as *AmbientAutoNAT) scheduleProbe() time.Duration {
+func (as *AmbientAutoNAT) scheduleProbe(retryProbe bool) time.Duration {
 	// Our baseline is a probe every 'AutoNATRefreshInterval'
 	// This is modulated by:
-	// * if we are in an unknown state, have low confidence, or we want to retry because
-	// * a probe was refused that should drop to 'AutoNATRetryInterval'
+	// * if we are in an unknown state, have low confidence, or we want to retry because a probe was refused that
+	//   should drop to 'AutoNATRetryInterval'
 	// * recent inbound connections (implying continued connectivity) should decrease the retry when public
 	// * recent inbound connections when not public mean we should try more actively to see if we're public.
 	fixedNow := time.Now()
@@ -256,7 +256,7 @@ func (as *AmbientAutoNAT) scheduleProbe() time.Duration {
 	}
 	if !as.lastProbe.IsZero() {
 		untilNext := as.config.refreshInterval
-		if as.retryProbe {
+		if retryProbe {
 			untilNext = as.config.retryInterval
 		} else if currentStatus == network.ReachabilityUnknown {
 			untilNext = as.config.retryInterval
