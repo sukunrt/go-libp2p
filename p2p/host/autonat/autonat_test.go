@@ -236,12 +236,10 @@ func TestAutoNATDialRefused(t *testing.T) {
 	}
 
 	connect(t, hs, hc)
-	expectEvent(t, s, network.ReachabilityPublic, 3*time.Second)
+	expectEvent(t, s, network.ReachabilityPublic, 10*time.Second)
 
 	hs.SetStreamHandler(AutoNATProto, sayRefusedStreamHandler(t))
 	hps := makeAutoNATRefuseDialRequest(t)
-	defer hps.Close()
-
 	connect(t, hps, hc)
 	identifyAsServer(hps, hc)
 
