@@ -107,7 +107,7 @@ func New(h host.Host, options ...Option) (AutoNAT, error) {
 		host:              h,
 		config:            conf,
 		inboundConn:       make(chan network.Conn, 5),
-		dialResponses:     make(chan error, 5),
+		dialResponses:     make(chan error, 1),
 
 		emitReachabilityChanged: emitReachabilityChanged,
 		service:                 service,
@@ -202,7 +202,13 @@ func (as *AmbientAutoNAT) background() {
 			if !ok {
 				return
 			}
-			as.handleDialResponse(err)
+			// retry on dial refused. A dial may be refused for reasons like being rate limited.
+			if err != nil && IsDialRefused(err) {
+				peer := as.getPeerToProbe()
+				as.tryProbe(peer)
+			} else {
+				as.handleDialResponse(err)
+			}
 		case <-timer.C:
 			peer := as.getPeerToProbe()
 			as.tryProbe(peer)
@@ -277,13 +283,6 @@ func (as *AmbientAutoNAT) handleDialResponse(dialErr error) {
 		observation = network.ReachabilityPublic
 	case IsDialError(dialErr):
 		observation = network.ReachabilityPrivate
-	case IsDialRefused(dialErr):
-		// a dial may be refused for reasons like being rate limited. We don't want to change our NAT status based
-		// on this. We just schedule the next probe sooner
-		if as.confidence == maxConfidence {
-			as.confidence--
-		}
-		return
 	default:
 		observation = network.ReachabilityUnknown
 	}
