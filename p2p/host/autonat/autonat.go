@@ -212,6 +212,7 @@ func (as *AmbientAutoNAT) background() {
 			peer := as.getPeerToProbe()
 			as.tryProbe(peer)
 			timerRunning = false
+			as.retryProbe = false
 		case <-as.ctx.Done():
 			return
 		}
@@ -222,7 +223,6 @@ func (as *AmbientAutoNAT) background() {
 		}
 		timer.Reset(as.scheduleProbe())
 		timerRunning = true
-		as.retryProbe = false
 	}
 }
 
