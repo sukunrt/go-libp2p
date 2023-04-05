@@ -45,6 +45,7 @@ type AmbientAutoNAT struct {
 	lastProbeTry time.Time
 	lastProbe    time.Time
 	recentProbes map[peer.ID]time.Time
+	retryProbe   bool
 
 	service *autoNATService
 
@@ -202,10 +203,8 @@ func (as *AmbientAutoNAT) background() {
 			if !ok {
 				return
 			}
-			// retry on dial refused. A dial may be refused for reasons like being rate limited.
-			if err != nil && IsDialRefused(err) {
-				peer := as.getPeerToProbe()
-				as.tryProbe(peer)
+			if IsDialRefused(err) {
+				as.retryProbe = true
 			} else {
 				as.handleDialResponse(err)
 			}
@@ -223,6 +222,7 @@ func (as *AmbientAutoNAT) background() {
 		}
 		timer.Reset(as.scheduleProbe())
 		timerRunning = true
+		as.retryProbe = false
 	}
 }
 
@@ -239,7 +239,8 @@ func (as *AmbientAutoNAT) cleanupRecentProbes() {
 func (as *AmbientAutoNAT) scheduleProbe() time.Duration {
 	// Our baseline is a probe every 'AutoNATRefreshInterval'
 	// This is modulated by:
-	// * if we are in an unknown state, or have low confidence, that should drop to 'AutoNATRetryInterval'
+	// * if we are in an unknown state, have low confidence, or we want to retry because
+	// * a probe was refused that should drop to 'AutoNATRetryInterval'
 	// * recent inbound connections (implying continued connectivity) should decrease the retry when public
 	// * recent inbound connections when not public mean we should try more actively to see if we're public.
 	fixedNow := time.Now()
@@ -255,7 +256,9 @@ func (as *AmbientAutoNAT) scheduleProbe() time.Duration {
 	}
 	if !as.lastProbe.IsZero() {
 		untilNext := as.config.refreshInterval
-		if currentStatus == network.ReachabilityUnknown {
+		if as.retryProbe {
+			untilNext = as.config.retryInterval
+		} else if currentStatus == network.ReachabilityUnknown {
 			untilNext = as.config.retryInterval
 		} else if as.confidence < maxConfidence {
 			untilNext = as.config.retryInterval
