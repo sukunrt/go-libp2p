@@ -42,17 +42,25 @@ func sayPrivateStreamHandler(t *testing.T) network.StreamHandler {
 	}
 }
 
-func makeAutoNATRefuseDialRequest(t *testing.T) host.Host {
+func makeAutoNATRefuseDialRequest(t *testing.T, done chan struct{}) host.Host {
 	h := bhost.NewBlankHost(swarmt.GenSwarm(t))
-	h.SetStreamHandler(AutoNATProto, sayRefusedStreamHandler(t))
+	h.SetStreamHandler(AutoNATProto, sayRefusedStreamHandler(t, done))
 	return h
 }
 
-func sayRefusedStreamHandler(t *testing.T) network.StreamHandler {
+func sayRefusedStreamHandler(t *testing.T, done chan struct{}) network.StreamHandler {
 	return func(s network.Stream) {
 		defer s.Close()
 		r := pbio.NewDelimitedReader(s, network.MessageSizeMax)
 		if err := r.ReadMsg(&pb.Message{}); err != nil {
+			// ignore error if the test has completed
+			select {
+			case _, ok := <-done:
+				if !ok {
+					return
+				}
+			default:
+			}
 			t.Error(err)
 			return
 		}
@@ -238,14 +246,16 @@ func TestAutoNATDialRefused(t *testing.T) {
 	connect(t, hs, hc)
 	expectEvent(t, s, network.ReachabilityPublic, 10*time.Second)
 
-	hs.SetStreamHandler(AutoNATProto, sayRefusedStreamHandler(t))
-	hps := makeAutoNATRefuseDialRequest(t)
+	done := make(chan struct{})
+	hs.SetStreamHandler(AutoNATProto, sayRefusedStreamHandler(t, done))
+	hps := makeAutoNATRefuseDialRequest(t, done)
 	connect(t, hps, hc)
 	identifyAsServer(hps, hc)
 
 	require.Never(t, func() bool {
 		return an.Status() != network.ReachabilityPublic
 	}, 3*time.Second, 1*time.Second, "Expected probe to not change reachability from public")
+	close(done)
 }
 
 func TestAutoNATObservationRecording(t *testing.T) {
