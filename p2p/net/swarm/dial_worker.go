@@ -38,7 +38,6 @@ type addrDial struct {
 	conn     *Conn
 	err      error
 	requests []int
-	dialed   bool
 }
 
 type dialWorker struct {
@@ -155,11 +154,9 @@ loop:
 			w.requests[w.reqno] = pr
 
 			for _, ad := range tojoin {
-				if !ad.dialed {
-					if simConnect, isClient, reason := network.GetSimultaneousConnect(req.ctx); simConnect {
-						if simConnect, _, _ := network.GetSimultaneousConnect(ad.ctx); !simConnect {
-							ad.ctx = network.WithSimultaneousConnect(ad.ctx, isClient, reason)
-						}
+				if simConnect, isClient, reason := network.GetSimultaneousConnect(req.ctx); simConnect {
+					if simConnect, _, _ := network.GetSimultaneousConnect(ad.ctx); !simConnect {
+						ad.ctx = network.WithSimultaneousConnect(ad.ctx, isClient, reason)
 					}
 				}
 				ad.requests = append(ad.requests, w.reqno)
