@@ -574,3 +574,25 @@ func PrometheusRegisterer(reg prometheus.Registerer) Option {
 		return nil
 	}
 }
+
+// NetworkDialRanker configures libp2p to use d as the dial ranker
+func NetworkDialRanker(d network.DialRanker) Option {
+	return func(cfg *Config) error {
+		if cfg.NetworkDialRanker != nil {
+			return errors.New("dial ranker already set")
+		}
+		cfg.NetworkDialRanker = d
+		return nil
+	}
+}
+
+// NoDelayNetworkDialRanker configures libp2p to not delay any address while dialing
+func NoDelayNetworkDialRanker() Option {
+	return func(cfg *Config) error {
+		if cfg.NetworkDialRanker != nil {
+			return errors.New("dial ranker already set")
+		}
+		cfg.NoDelayNetworkDialRanker = true
+		return nil
+	}
+}

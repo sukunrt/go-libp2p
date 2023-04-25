@@ -184,3 +184,13 @@ type Dialer interface {
 	Notify(Notifiee)
 	StopNotify(Notifiee)
 }
+
+// AddrDelay provides an address along with the delay after which the address
+// should be dialed
+type AddrDelay struct {
+	Addr  ma.Multiaddr
+	Delay time.Duration
+}
+
+// DialRanker provides a schedule of dialing the provided addresses
+type DialRanker func([]ma.Multiaddr) []*AddrDelay
