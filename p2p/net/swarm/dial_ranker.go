@@ -46,12 +46,12 @@ func defaultDialRanker(addrs []ma.Multiaddr) []*network.AddrDelay {
 		switch {
 		case !manet.IsPublicAddr(a):
 			pvt = append(pvt, a)
+		case isRelayAddr(a):
+			relay = append(relay, a)
 		case isProtocolAddr(a, ma.P_IP4):
 			ip4 = append(ip4, a)
 		case isProtocolAddr(a, ma.P_IP6):
 			ip6 = append(ip6, a)
-		case isRelayAddr(a):
-			relay = append(relay, a)
 		default:
 			res = append(res, &network.AddrDelay{Addr: a, Delay: 0})
 		}
@@ -107,11 +107,11 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 				continue
 			}
 			if hasQuic || hasQuicV1 {
-				delay = tcpDelay
+				delay += tcpDelay
 			}
 		case isProtocolAddr(a, ma.P_TCP):
 			if hasQuic || hasQuicV1 {
-				delay = tcpDelay
+				delay += tcpDelay
 			}
 		}
 		res = append(res, &network.AddrDelay{Addr: a, Delay: delay})

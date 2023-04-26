@@ -105,6 +105,11 @@ func TestDelayRankerTCPDelay(t *testing.T) {
 				}
 				return tc.output[i].Delay < tc.output[j].Delay
 			})
+			for i := 0; i < len(tc.output); i++ {
+				if !tc.output[i].Addr.Equal(res[i].Addr) || tc.output[i].Delay != res[i].Delay {
+					t.Errorf("expected %+v got %+v", tc.output[i], res[i])
+				}
+			}
 		})
 	}
 }
@@ -196,6 +201,12 @@ func TestDelayRankerAddrDropped(t *testing.T) {
 				}
 				return tc.output[i].Delay < tc.output[j].Delay
 			})
+
+			for i := 0; i < len(tc.output); i++ {
+				if !tc.output[i].Addr.Equal(res[i].Addr) || tc.output[i].Delay != res[i].Delay {
+					t.Errorf("expected %+v got %+v", tc.output[i], res[i])
+				}
+			}
 		})
 	}
 }
@@ -248,6 +259,12 @@ func TestDelayRankerRelay(t *testing.T) {
 				}
 				return tc.output[i].Delay < tc.output[j].Delay
 			})
+
+			for i := 0; i < len(tc.output); i++ {
+				if !tc.output[i].Addr.Equal(res[i].Addr) || tc.output[i].Delay != res[i].Delay {
+					t.Errorf("expected %+v got %+v", tc.output[i], res[i])
+				}
+			}
 		})
 	}
 }
