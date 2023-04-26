@@ -26,6 +26,11 @@ func closeAllConns(reuse *reuse) {
 			conn.DecreaseCount()
 		}
 	}
+	for _, conn := range reuse.globalDial {
+		for conn.GetCount() > 0 {
+			conn.DecreaseCount()
+		}
+	}
 	for _, conns := range reuse.unicast {
 		for _, conn := range conns {
 			for conn.GetCount() > 0 {
@@ -107,6 +112,21 @@ func TestReuseConnectionWhenDialing(t *testing.T) {
 	require.NoError(t, err)
 	conn, err := reuse.Dial("udp4", raddr)
 	require.NoError(t, err)
+	require.Equal(t, conn.GetCount(), 2)
+}
+
+func TestReuseConnectionWhenListening(t *testing.T) {
+	reuse := newReuse()
+	cleanup(t, reuse)
+
+	raddr, err := net.ResolveUDPAddr("udp4", "1.1.1.1:1234")
+	require.NoError(t, err)
+	conn, err := reuse.Dial("udp4", raddr)
+	require.NoError(t, err)
+	laddr := &net.UDPAddr{IP: net.IPv4zero, Port: conn.UDPConn.LocalAddr().(*net.UDPAddr).Port}
+	lconn, err := reuse.Listen("udp4", laddr)
+	require.NoError(t, err)
+	require.Equal(t, lconn.GetCount(), 2)
 	require.Equal(t, conn.GetCount(), 2)
 }
 

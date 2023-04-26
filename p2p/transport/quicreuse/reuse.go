@@ -75,13 +75,15 @@ type reuse struct {
 	routes  routing.Router
 	unicast map[string] /* IP.String() */ map[int] /* port */ *reuseConn
 	// global contains connections that are listening on 0.0.0.0 / ::
-	global map[int]*reuseConn
+	global     map[int]*reuseConn
+	globalDial map[int]*reuseConn
 }
 
 func newReuse() *reuse {
 	r := &reuse{
 		unicast:    make(map[string]map[int]*reuseConn),
 		global:     make(map[int]*reuseConn),
+		globalDial: make(map[int]*reuseConn),
 		closeChan:  make(chan struct{}),
 		gcStopChan: make(chan struct{}),
 	}
@@ -93,6 +95,9 @@ func (r *reuse) gc() {
 	defer func() {
 		r.mutex.Lock()
 		for _, conn := range r.global {
+			conn.Close()
+		}
+		for _, conn := range r.globalDial {
 			conn.Close()
 		}
 		for _, conns := range r.unicast {
@@ -117,6 +122,12 @@ func (r *reuse) gc() {
 				if conn.ShouldGarbageCollect(now) {
 					conn.Close()
 					delete(r.global, key)
+				}
+			}
+			for key, conn := range r.globalDial {
+				if conn.ShouldGarbageCollect(now) {
+					conn.Close()
+					delete(r.globalDial, key)
 				}
 			}
 			for ukey, conns := range r.unicast {
@@ -189,6 +200,11 @@ func (r *reuse) dialLocked(network string, source *net.IP) (*reuseConn, error) {
 		return conn, nil
 	}
 
+	// Use a connection we've previously dialed from
+	for _, conn := range r.globalDial {
+		return conn, nil
+	}
+
 	// We don't have a connection that we can use for dialing.
 	// Dial a new connection from a random port.
 	var addr *net.UDPAddr
@@ -203,29 +219,43 @@ func (r *reuse) dialLocked(network string, source *net.IP) (*reuseConn, error) {
 		return nil, err
 	}
 	rconn := newReuseConn(conn)
-	r.global[conn.LocalAddr().(*net.UDPAddr).Port] = rconn
+	r.globalDial[conn.LocalAddr().(*net.UDPAddr).Port] = rconn
 	return rconn, nil
 }
 
 func (r *reuse) Listen(network string, laddr *net.UDPAddr) (*reuseConn, error) {
-	conn, err := net.ListenUDP(network, laddr)
-	if err != nil {
-		return nil, err
-	}
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-
-	rconn := newReuseConn(conn)
-	rconn.IncreaseCount()
-
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	var rconn *reuseConn
+	var localAddr *net.UDPAddr
+
+	// reuse the connection if we've dialed out of this port already
+	if laddr.IP.IsUnspecified() {
+		if _, ok := r.globalDial[laddr.Port]; ok {
+			rconn = r.globalDial[laddr.Port]
+			localAddr = rconn.UDPConn.LocalAddr().(*net.UDPAddr)
+		}
+	}
+	if rconn == nil {
+		conn, err := net.ListenUDP(network, laddr)
+		if err != nil {
+			return nil, err
+		}
+		localAddr = conn.LocalAddr().(*net.UDPAddr)
+		rconn = newReuseConn(conn)
+	}
+
+	rconn.IncreaseCount()
 
 	// Deal with listen on a global address
 	if localAddr.IP.IsUnspecified() {
 		// The kernel already checked that the laddr is not already listen
 		// so we need not check here (when we create ListenUDP).
 		r.global[localAddr.Port] = rconn
-		return rconn, err
+		// delete the entry from dial map in case we are reusing this connection
+		delete(r.globalDial, localAddr.Port)
+		return rconn, nil
 	}
 
 	// Deal with listen on a unicast address
@@ -239,7 +269,7 @@ func (r *reuse) Listen(network string, laddr *net.UDPAddr) (*reuseConn, error) {
 	// The kernel already checked that the laddr is not already listen
 	// so we need not check here (when we create ListenUDP).
 	r.unicast[localAddr.IP.String()][localAddr.Port] = rconn
-	return rconn, err
+	return rconn, nil
 }
 
 func (r *reuse) Close() error {
