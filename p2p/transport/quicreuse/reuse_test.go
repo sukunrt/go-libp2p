@@ -130,6 +130,30 @@ func TestReuseConnectionWhenListening(t *testing.T) {
 	require.Equal(t, conn.GetCount(), 2)
 }
 
+func TestReuseConnectionWhenDialBeforeListen(t *testing.T) {
+	reuse := newReuse()
+	cleanup(t, reuse)
+
+	// dial any address
+	raddr, err := net.ResolveUDPAddr("udp4", "1.1.1.1:1234")
+	require.NoError(t, err)
+	_, err = reuse.Dial("udp4", raddr)
+	require.NoError(t, err)
+
+	// open a listener
+	laddr := &net.UDPAddr{IP: net.IPv4zero, Port: 10000}
+	lconn, err := reuse.Listen("udp4", laddr)
+	require.NoError(t, err)
+
+	// new dials should go via the listener connection
+	raddr, err = net.ResolveUDPAddr("udp4", "1.1.1.1:1235")
+	require.NoError(t, err)
+	conn, err := reuse.Dial("udp4", raddr)
+	require.NoError(t, err)
+	require.Equal(t, conn, lconn)
+	require.Equal(t, conn.GetCount(), 2)
+}
+
 func TestReuseListenOnSpecificInterface(t *testing.T) {
 	if platformHasRoutingTables() {
 		t.Skip("this test only works on platforms that support routing tables")
