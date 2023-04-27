@@ -75,17 +75,20 @@ type reuse struct {
 	routes  routing.Router
 	unicast map[string] /* IP.String() */ map[int] /* port */ *reuseConn
 	// global contains connections that are listening on 0.0.0.0 / ::
-	global     map[int]*reuseConn
-	globalDial map[int]*reuseConn
+	global map[int]*reuseConn
+	// globalFallback contains connections that we've dialed out from. connections
+	// are reused from this map if no connection is available in the global
+	// map. These connections are listening on 0.0.0.0 / ::
+	globalFallback map[int]*reuseConn
 }
 
 func newReuse() *reuse {
 	r := &reuse{
-		unicast:    make(map[string]map[int]*reuseConn),
-		global:     make(map[int]*reuseConn),
-		globalDial: make(map[int]*reuseConn),
-		closeChan:  make(chan struct{}),
-		gcStopChan: make(chan struct{}),
+		unicast:        make(map[string]map[int]*reuseConn),
+		global:         make(map[int]*reuseConn),
+		globalFallback: make(map[int]*reuseConn),
+		closeChan:      make(chan struct{}),
+		gcStopChan:     make(chan struct{}),
 	}
 	go r.gc()
 	return r
@@ -97,7 +100,7 @@ func (r *reuse) gc() {
 		for _, conn := range r.global {
 			conn.Close()
 		}
-		for _, conn := range r.globalDial {
+		for _, conn := range r.globalFallback {
 			conn.Close()
 		}
 		for _, conns := range r.unicast {
@@ -124,10 +127,10 @@ func (r *reuse) gc() {
 					delete(r.global, key)
 				}
 			}
-			for key, conn := range r.globalDial {
+			for key, conn := range r.globalFallback {
 				if conn.ShouldGarbageCollect(now) {
 					conn.Close()
-					delete(r.globalDial, key)
+					delete(r.globalFallback, key)
 				}
 			}
 			for ukey, conns := range r.unicast {
@@ -201,7 +204,7 @@ func (r *reuse) dialLocked(network string, source *net.IP) (*reuseConn, error) {
 	}
 
 	// Use a connection we've previously dialed from
-	for _, conn := range r.globalDial {
+	for _, conn := range r.globalFallback {
 		return conn, nil
 	}
 
@@ -219,7 +222,7 @@ func (r *reuse) dialLocked(network string, source *net.IP) (*reuseConn, error) {
 		return nil, err
 	}
 	rconn := newReuseConn(conn)
-	r.globalDial[conn.LocalAddr().(*net.UDPAddr).Port] = rconn
+	r.globalFallback[conn.LocalAddr().(*net.UDPAddr).Port] = rconn
 	return rconn, nil
 }
 
@@ -230,10 +233,10 @@ func (r *reuse) Listen(network string, laddr *net.UDPAddr) (*reuseConn, error) {
 	var rconn *reuseConn
 	var localAddr *net.UDPAddr
 
-	// reuse the connection if we've dialed out of this port already
+	// reuse the fallback connection if we've dialed out from this port already
 	if laddr.IP.IsUnspecified() {
-		if _, ok := r.globalDial[laddr.Port]; ok {
-			rconn = r.globalDial[laddr.Port]
+		if _, ok := r.globalFallback[laddr.Port]; ok {
+			rconn = r.globalFallback[laddr.Port]
 			localAddr = rconn.UDPConn.LocalAddr().(*net.UDPAddr)
 		}
 	}
@@ -253,8 +256,8 @@ func (r *reuse) Listen(network string, laddr *net.UDPAddr) (*reuseConn, error) {
 		// The kernel already checked that the laddr is not already listen
 		// so we need not check here (when we create ListenUDP).
 		r.global[localAddr.Port] = rconn
-		// delete the entry from dial map in case we are reusing this connection
-		delete(r.globalDial, localAddr.Port)
+		// delete the entry from fallback map in case we are reusing this connection
+		delete(r.globalFallback, localAddr.Port)
 		return rconn, nil
 	}
 

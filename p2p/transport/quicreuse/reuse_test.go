@@ -26,7 +26,7 @@ func closeAllConns(reuse *reuse) {
 			conn.DecreaseCount()
 		}
 	}
-	for _, conn := range reuse.globalDial {
+	for _, conn := range reuse.globalFallback {
 		for conn.GetCount() > 0 {
 			conn.DecreaseCount()
 		}
