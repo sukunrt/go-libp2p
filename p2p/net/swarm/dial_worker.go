@@ -98,11 +98,15 @@ func (w *dialWorker) loop() {
 	w.loopStTime = time.Now()
 	w.dialTimer = time.NewTimer(math.MaxInt64)
 	w.timerRunning = true
+	numDials := 0
 loop:
 	for {
 		select {
 		case req, ok := <-w.reqch:
 			if !ok {
+				if numDials > 0 && w.s.metricsTracer != nil {
+					w.s.metricsTracer.DialCompleted(numDials)
+				}
 				return
 			}
 
@@ -234,6 +238,9 @@ loop:
 					w.dispatchError(ad, err)
 					w.scheduleNextDial()
 					continue loop
+				}
+				if !w.connected {
+					w.s.metricsTracer.TimeToFirstConnection(time.Since(w.loopStTime))
 				}
 				w.connected = true
 
