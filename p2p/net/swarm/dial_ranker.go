@@ -87,6 +87,8 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 	}
 
 	res := make([]*network.AddrDelay, 0, len(addrs))
+	qdelay := 300 * time.Millisecond
+	qdone := false
 	for _, a := range addrs {
 		delay := offset
 		switch {
@@ -102,6 +104,15 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 					continue
 				}
 			}
+			if qdone {
+				delay += qdelay
+			}
+			qdone = true
+		case isProtocolAddr(a, ma.P_QUIC_V1):
+			if qdone {
+				delay += qdelay
+			}
+			qdone = true
 		case isProtocolAddr(a, ma.P_WS) || isProtocolAddr(a, ma.P_WSS):
 			if _, ok := tcpAddr[addrPort(a, ma.P_TCP)]; ok {
 				continue
