@@ -69,6 +69,22 @@ var (
 		},
 		[]string{"transport", "security", "muxer", "early_muxer", "ip_version"},
 	)
+	dialsPerPeer = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Name:      "dials_per_peer",
+			Help:      "Number of addresses dialed per peer",
+			Buckets:   prometheus.LinearBuckets(0, 1, 20),
+		},
+	)
+	timeToFirstConn = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Name:      "time_to_first_conn_seconds",
+			Help:      "time take to connect to peer",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 1.3, 35),
+		},
+	)
 	collectors = []prometheus.Collector{
 		connsOpened,
 		keyTypes,
@@ -76,6 +92,8 @@ var (
 		dialError,
 		connDuration,
 		connHandshakeLatency,
+		dialsPerPeer,
+		timeToFirstConn,
 	}
 )
 
@@ -84,6 +102,8 @@ type MetricsTracer interface {
 	ClosedConnection(network.Direction, time.Duration, network.ConnectionState, ma.Multiaddr)
 	CompletedHandshake(time.Duration, network.ConnectionState, ma.Multiaddr)
 	FailedDialing(ma.Multiaddr, error)
+	DialCompleted(numDials int)
+	TimeToFirstConnection(d time.Duration)
 }
 
 type metricsTracer struct{}
@@ -212,4 +232,12 @@ func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, err error) {
 	*tags = append(*tags, transport, e)
 	*tags = append(*tags, getIPVersion(addr))
 	dialError.WithLabelValues(*tags...).Inc()
+}
+
+func (m *metricsTracer) DialCompleted(numDials int) {
+	dialsPerPeer.Observe(float64(numDials))
+}
+
+func (m *metricsTracer) TimeToFirstConnection(d time.Duration) {
+	timeToFirstConn.Observe(d.Seconds())
 }

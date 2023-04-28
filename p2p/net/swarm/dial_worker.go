@@ -3,6 +3,7 @@ package swarm
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -79,12 +80,16 @@ func (w *dialWorker) loop() {
 	// used to signal readiness to dial and completion of the dial
 	ready := make(chan struct{})
 	close(ready)
-
+	numDials := 0
+	loopStTime := time.Now()
 loop:
 	for {
 		select {
 		case req, ok := <-w.reqch:
 			if !ok {
+				if numDials > 0 && w.s.metricsTracer != nil {
+					w.s.metricsTracer.DialCompleted(numDials)
+				}
 				return
 			}
 
@@ -182,16 +187,13 @@ loop:
 				if err != nil {
 					w.dispatchError(ad, err)
 				}
+				numDials++
 			}
 
 			w.nextDial = nil
 			w.triggerDial = nil
 
 		case res := <-w.resch:
-			if res.Conn != nil {
-				w.connected = true
-			}
-
 			ad := w.pending[res.Addr]
 
 			if res.Conn != nil {
@@ -203,6 +205,12 @@ loop:
 					w.dispatchError(ad, err)
 					continue loop
 				}
+				if !w.connected {
+					if w.s.metricsTracer != nil {
+						w.s.metricsTracer.TimeToFirstConnection(time.Since(loopStTime))
+					}
+				}
+				w.connected = true
 
 				// dispatch to still pending requests
 				for _, reqno := range ad.requests {
