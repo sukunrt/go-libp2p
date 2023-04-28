@@ -1,6 +1,7 @@
 package swarm
 
 import (
+	"math/rand"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -87,6 +88,10 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 	}
 
 	res := make([]*network.AddrDelay, 0, len(addrs))
+	for i := range addrs {
+		j := rand.Intn(i + 1)
+		addrs[i], addrs[j] = addrs[j], addrs[i]
+	}
 	qdelay := 300 * time.Millisecond
 	qdone := false
 	for _, a := range addrs {
