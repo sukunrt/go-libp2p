@@ -74,7 +74,7 @@ var (
 			Namespace: metricNamespace,
 			Name:      "dials_per_peer",
 			Help:      "Number of addresses dialed per peer",
-			Buckets:   prometheus.LinearBuckets(0, 1, 20),
+			Buckets:   []float64{0, 0.99, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
 	)
 	timeToFirstConn = prometheus.NewHistogram(
