@@ -240,7 +240,7 @@ loop:
 					w.scheduleNextDial()
 					continue loop
 				}
-				if !w.connected {
+				if !w.connected && w.s.metricsTracer != nil {
 					w.s.metricsTracer.TimeToFirstConnection(time.Since(w.loopStTime))
 				}
 				w.connected = true
