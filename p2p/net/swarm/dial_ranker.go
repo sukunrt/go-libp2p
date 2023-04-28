@@ -92,7 +92,7 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 		j := rand.Intn(i + 1)
 		addrs[i], addrs[j] = addrs[j], addrs[i]
 	}
-	qdelay := 300 * time.Millisecond
+	qdelay := 200 * time.Millisecond
 	qdone := false
 	for _, a := range addrs {
 		delay := offset
