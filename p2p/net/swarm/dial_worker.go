@@ -220,6 +220,7 @@ loop:
 				} else {
 					w.currDials++
 				}
+				numDials++
 			}
 			w.dialQueue = w.dialQueue[i:]
 			w.timerRunning = false
