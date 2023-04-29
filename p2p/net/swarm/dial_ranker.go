@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -62,7 +63,7 @@ func defaultDialRanker(addrs []ma.Multiaddr) []*network.AddrDelay {
 		roffset = relayDelay
 	}
 
-	res = append(res, getAddrDelay(pvt, privateTCPDelay, 1*time.Second)...)
+	//	res = append(res, getAddrDelay(pvt, privateTCPDelay, 1*time.Second)...)
 	res = append(res, getAddrDelay(ip4, publicTCPDelay, 0)...)
 	//res = append(res, getAddrDelay(ip6, publicTCPDelay, 0)...)
 	res = append(res, getAddrDelay(relay, publicTCPDelay, roffset)...)
@@ -108,22 +109,29 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 		na = append(na, a)
 	}
 
+	getScore := func(a ma.Multiaddr) int {
+		si := 0
+		if p, err := a.ValueForProtocol(ma.P_TCP); err == nil {
+			pp, _ := strconv.Atoi(p)
+			si = 1000_000 + pp
+		} else if p, err := a.ValueForProtocol(ma.P_UDP); err == nil {
+			pp, _ := strconv.Atoi(p)
+			si = pp
+		} else {
+			si = 1000_000_000
+		}
+		return si
+	}
+
 	sort.Slice(na, func(i, j int) bool {
-		si, sj := 0, 0
-		if isProtocolAddr(na[i], ma.P_TCP) {
-			si = 1
-		}
-		if isProtocolAddr(na[j], ma.P_TCP) {
-			sj = 1
-		}
-		return si < sj
+		return getScore(na[i]) < getScore(na[j])
 	})
 
 	var res []*network.AddrDelay
 	delay := time.Duration(0)
 	for _, a := range na {
 		res = append(res, &network.AddrDelay{Addr: a, Delay: delay})
-		delay += 300 * time.Millisecond
+		delay += 500 * time.Millisecond
 	}
 	return res
 }
