@@ -1,7 +1,7 @@
 package swarm
 
 import (
-	"math/rand"
+	"sort"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -62,22 +62,20 @@ func defaultDialRanker(addrs []ma.Multiaddr) []*network.AddrDelay {
 		roffset = relayDelay
 	}
 
-	res = append(res, getAddrDelay(pvt, privateTCPDelay, 0)...)
+	res = append(res, getAddrDelay(pvt, privateTCPDelay, 1*time.Second)...)
 	res = append(res, getAddrDelay(ip4, publicTCPDelay, 0)...)
-	res = append(res, getAddrDelay(ip6, publicTCPDelay, 0)...)
+	//res = append(res, getAddrDelay(ip6, publicTCPDelay, 0)...)
 	res = append(res, getAddrDelay(relay, publicTCPDelay, roffset)...)
 	return res
 }
 
 func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Duration) []*network.AddrDelay {
-	var hasQuic, hasQuicV1 bool
+	var hasQuicV1 bool
 	quicV1Addr := make(map[string]struct{})
 	tcpAddr := make(map[string]struct{})
 	for _, a := range addrs {
 		switch {
 		case isProtocolAddr(a, ma.P_WEBTRANSPORT):
-		case isProtocolAddr(a, ma.P_QUIC):
-			hasQuic = true
 		case isProtocolAddr(a, ma.P_QUIC_V1):
 			hasQuicV1 = true
 			quicV1Addr[addrPort(a, ma.P_UDP)] = struct{}{}
@@ -87,15 +85,8 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 		}
 	}
 
-	res := make([]*network.AddrDelay, 0, len(addrs))
-	for i := range addrs {
-		j := rand.Intn(i + 1)
-		addrs[i], addrs[j] = addrs[j], addrs[i]
-	}
-	qdelay := 200 * time.Millisecond
-	qdone := false
+	var na []ma.Multiaddr
 	for _, a := range addrs {
-		delay := offset
 		switch {
 		case isProtocolAddr(a, ma.P_WEBTRANSPORT):
 			if hasQuicV1 {
@@ -109,28 +100,30 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 					continue
 				}
 			}
-			if qdone {
-				delay += qdelay
-			}
-			qdone = true
-		case isProtocolAddr(a, ma.P_QUIC_V1):
-			if qdone {
-				delay += qdelay
-			}
-			qdone = true
 		case isProtocolAddr(a, ma.P_WS) || isProtocolAddr(a, ma.P_WSS):
 			if _, ok := tcpAddr[addrPort(a, ma.P_TCP)]; ok {
 				continue
 			}
-			if hasQuic || hasQuicV1 {
-				delay += tcpDelay
-			}
-		case isProtocolAddr(a, ma.P_TCP):
-			if hasQuic || hasQuicV1 {
-				delay += tcpDelay
-			}
 		}
+		na = append(na, a)
+	}
+
+	sort.Slice(na, func(i, j int) bool {
+		si, sj := 0, 0
+		if isProtocolAddr(na[i], ma.P_TCP) {
+			si = 1
+		}
+		if isProtocolAddr(na[j], ma.P_TCP) {
+			sj = 1
+		}
+		return si < sj
+	})
+
+	var res []*network.AddrDelay
+	delay := time.Duration(0)
+	for _, a := range na {
 		res = append(res, &network.AddrDelay{Addr: a, Delay: delay})
+		delay += 300 * time.Millisecond
 	}
 	return res
 }
