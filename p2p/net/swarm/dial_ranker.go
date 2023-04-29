@@ -118,7 +118,7 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 	quicCount := 0
 	tcpCount := 0
 	for _, a := range na {
-		delay := 0 * time.Millisecond
+		delay := offset
 		switch {
 		case isProtocolAddr(a, ma.P_QUIC) || isProtocolAddr(a, ma.P_QUIC_V1):
 			if quicCount > 0 {

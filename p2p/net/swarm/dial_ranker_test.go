@@ -34,6 +34,7 @@ func TestDelayRankerTCPDelay(t *testing.T) {
 	q16 := ma.StringCast("/ip6/::/udp/1/quic")
 	qv1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1")
 	qv2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic-v1")
+	qv3 := ma.StringCast("/ip4/1.2.3.4/udp/3/quic-v1")
 	t1 := ma.StringCast("/ip4/1.2.3.5/tcp/1/")
 	t2 := ma.StringCast("/ip4/1.2.3.5/tcp/2")
 
@@ -44,10 +45,11 @@ func TestDelayRankerTCPDelay(t *testing.T) {
 	}{
 		{
 			name:  "ranking",
-			addrs: []ma.Multiaddr{q1, qv1, qv2, t1, t2},
+			addrs: []ma.Multiaddr{q1, qv1, qv2, t1, t2, qv3},
 			output: []*network.AddrDelay{
 				{Addr: qv1, Delay: 0},
 				{Addr: qv2, Delay: quicDelay},
+				{Addr: qv3, Delay: quicDelay},
 				{Addr: t1, Delay: 2 * quicDelay},
 				{Addr: t2, Delay: 2*quicDelay + publicTCPDelay},
 			},
