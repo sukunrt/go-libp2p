@@ -497,8 +497,13 @@ func (s *Swarm) dialAddr(ctx context.Context, p peer.ID, addr ma.Multiaddr) (tra
 	start := time.Now()
 	connC, err := tpt.Dial(ctx, addr, p)
 	if err != nil {
+		var conn network.Conn
+		conns := s.ConnsToPeer(p)
+		if len(conns) > 0 {
+			conn = conns[0]
+		}
 		if s.metricsTracer != nil {
-			s.metricsTracer.FailedDialing(addr, err)
+			s.metricsTracer.FailedDialing(addr, conn, err)
 		}
 		return nil, err
 	}

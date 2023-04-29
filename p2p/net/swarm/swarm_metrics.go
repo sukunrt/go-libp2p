@@ -49,7 +49,7 @@ var (
 			Name:      "dial_errors_total",
 			Help:      "Dial Error",
 		},
-		[]string{"transport", "error", "ip_version"},
+		[]string{"transport", "error", "ip_version", "conn_transport"},
 	)
 	connDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -101,7 +101,7 @@ type MetricsTracer interface {
 	OpenedConnection(network.Direction, crypto.PubKey, network.ConnectionState, ma.Multiaddr)
 	ClosedConnection(network.Direction, time.Duration, network.ConnectionState, ma.Multiaddr)
 	CompletedHandshake(time.Duration, network.ConnectionState, ma.Multiaddr)
-	FailedDialing(ma.Multiaddr, error)
+	FailedDialing(ma.Multiaddr, network.Conn, error)
 	DialCompleted(numDials int)
 	TimeToFirstConnection(d time.Duration)
 }
@@ -205,7 +205,7 @@ func (m *metricsTracer) CompletedHandshake(t time.Duration, cs network.Connectio
 
 var transports = [...]int{ma.P_CIRCUIT, ma.P_WEBRTC, ma.P_WEBTRANSPORT, ma.P_QUIC, ma.P_QUIC_V1, ma.P_WSS, ma.P_WS, ma.P_TCP}
 
-func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, err error) {
+func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, conn network.Conn, err error) {
 	var transport string
 	for _, t := range transports {
 		if _, err := addr.ValueForProtocol(t); err == nil {
@@ -225,12 +225,25 @@ func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, err error) {
 			e = "connection refused"
 		}
 	}
-
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
 
 	*tags = append(*tags, transport, e)
 	*tags = append(*tags, getIPVersion(addr))
+
+	if conn != nil {
+		a := conn.LocalMultiaddr()
+		var transport string
+		for _, t := range transports {
+			if _, err := a.ValueForProtocol(t); err == nil {
+				transport = ma.ProtocolWithCode(t).Name
+			}
+		}
+		*tags = append(*tags, transport)
+	} else {
+		*tags = append(*tags, "<nil>")
+	}
+
 	dialError.WithLabelValues(*tags...).Inc()
 }
 
