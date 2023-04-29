@@ -38,8 +38,7 @@ func noDelayRanker(addrs []ma.Multiaddr) []*network.AddrDelay {
 // If a tcp address is present we don't dial ws or wss address on the same (ip, port) combination.
 // If direct addresses are present we delay all relay addresses by 500 millisecond
 func defaultDialRanker(addrs []ma.Multiaddr) []*network.AddrDelay {
-	ip4 := make([]ma.Multiaddr, 0, len(addrs))
-	ip6 := make([]ma.Multiaddr, 0, len(addrs))
+	public := make([]ma.Multiaddr, 0, len(addrs))
 	pvt := make([]ma.Multiaddr, 0, len(addrs))
 	relay := make([]ma.Multiaddr, 0, len(addrs))
 
@@ -50,22 +49,19 @@ func defaultDialRanker(addrs []ma.Multiaddr) []*network.AddrDelay {
 			pvt = append(pvt, a)
 		case isRelayAddr(a):
 			relay = append(relay, a)
-		case isProtocolAddr(a, ma.P_IP4):
-			ip4 = append(ip4, a)
-		case isProtocolAddr(a, ma.P_IP6):
-			ip6 = append(ip6, a)
+		case isProtocolAddr(a, ma.P_IP6) || isProtocolAddr(a, ma.P_IP4):
+			public = append(public, a)
 		default:
 			res = append(res, &network.AddrDelay{Addr: a, Delay: 0})
 		}
 	}
 	var roffset time.Duration = 0
-	if len(ip4) > 0 || len(ip6) > 0 {
+	if len(public) > 0 {
 		roffset = relayDelay
 	}
 
-	//	res = append(res, getAddrDelay(pvt, privateTCPDelay, 1*time.Second)...)
-	res = append(res, getAddrDelay(ip4, publicTCPDelay, 0)...)
-	//res = append(res, getAddrDelay(ip6, publicTCPDelay, 0)...)
+	res = append(res, getAddrDelay(pvt, privateTCPDelay, 0)...)
+	res = append(res, getAddrDelay(public, publicTCPDelay, 0)...)
 	res = append(res, getAddrDelay(relay, publicTCPDelay, roffset)...)
 	return res
 }
@@ -110,15 +106,16 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 	}
 
 	getScore := func(a ma.Multiaddr) int {
-		si := 0
+		si := 1000_000_000
 		if p, err := a.ValueForProtocol(ma.P_TCP); err == nil {
 			pp, _ := strconv.Atoi(p)
-			si = 1000_000 + pp
+			si = (1 << 24) + pp
 		} else if p, err := a.ValueForProtocol(ma.P_UDP); err == nil {
 			pp, _ := strconv.Atoi(p)
 			si = pp
-		} else {
-			si = 1000_000_000
+		}
+		if _, err := a.ValueForProtocol(ma.P_IP6); err != nil {
+			si += (1 << 20)
 		}
 		return si
 	}
@@ -131,7 +128,7 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 	delay := time.Duration(0)
 	for _, a := range na {
 		res = append(res, &network.AddrDelay{Addr: a, Delay: delay})
-		delay += 500 * time.Millisecond
+		delay += 300 * time.Millisecond
 	}
 	return res
 }
