@@ -509,7 +509,7 @@ func (s *Swarm) dialAddr(ctx context.Context, p peer.ID, addr ma.Multiaddr) (tra
 		if conn != nil {
 			addrS = conn.RemoteMultiaddr().String()
 		}
-		log.Errorf("dial to addr failed: %s %s conn: %s", addr, err, addrS)
+		log.Debugf("dial to addr failed: %s %s conn: %s", addr, err, addrS)
 
 		return nil, err
 	}
