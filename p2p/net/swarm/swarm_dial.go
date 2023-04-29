@@ -505,6 +505,11 @@ func (s *Swarm) dialAddr(ctx context.Context, p peer.ID, addr ma.Multiaddr) (tra
 		if s.metricsTracer != nil {
 			s.metricsTracer.FailedDialing(addr, conn, err)
 		}
+		addrS := "<NIL>"
+		if conn != nil {
+			addrS = conn.RemoteMultiaddr().String()
+		}
+		log.Debugf("error dialing %s got %s", addr, addrS)
 		return nil, err
 	}
 	canonicallog.LogPeerStatus(100, connC.RemotePeer(), connC.RemoteMultiaddr(), "connection_status", "established", "dir", "outbound")
