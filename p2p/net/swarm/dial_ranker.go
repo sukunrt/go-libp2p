@@ -72,14 +72,12 @@ func defaultDialRanker(addrs []ma.Multiaddr) []*network.AddrDelay {
 }
 
 func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Duration) []*network.AddrDelay {
-	var hasQuicV1 bool
 	quicV1Addr := make(map[string]struct{})
 	tcpAddr := make(map[string]struct{})
 	for _, a := range addrs {
 		switch {
 		case isProtocolAddr(a, ma.P_WEBTRANSPORT):
 		case isProtocolAddr(a, ma.P_QUIC_V1):
-			hasQuicV1 = true
 			quicV1Addr[addrPort(a, ma.P_UDP)] = struct{}{}
 		case isProtocolAddr(a, ma.P_WS) || isProtocolAddr(a, ma.P_WSS):
 		case isProtocolAddr(a, ma.P_TCP):
@@ -91,16 +89,12 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, offset time.Dura
 	for _, a := range addrs {
 		switch {
 		case isProtocolAddr(a, ma.P_WEBTRANSPORT):
-			if hasQuicV1 {
-				if _, ok := quicV1Addr[addrPort(a, ma.P_UDP)]; ok {
-					continue
-				}
+			if _, ok := quicV1Addr[addrPort(a, ma.P_UDP)]; ok {
+				continue
 			}
 		case isProtocolAddr(a, ma.P_QUIC):
-			if hasQuicV1 {
-				if _, ok := quicV1Addr[addrPort(a, ma.P_UDP)]; ok {
-					continue
-				}
+			if _, ok := quicV1Addr[addrPort(a, ma.P_UDP)]; ok {
+				continue
 			}
 		case isProtocolAddr(a, ma.P_WS) || isProtocolAddr(a, ma.P_WSS):
 			if _, ok := tcpAddr[addrPort(a, ma.P_TCP)]; ok {
