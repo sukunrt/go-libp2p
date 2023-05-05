@@ -8,7 +8,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	ma "github.com/multiformats/go-multiaddr"
-	manet "github.com/multiformats/go-multiaddr/net"
 )
 
 // /////////////////////////////////////////////////////////////////////////////////
@@ -38,6 +37,7 @@ type addrDial struct {
 	conn     *Conn
 	err      error
 	requests []int
+	dialed   bool
 }
 
 type dialWorker struct {
@@ -56,6 +56,9 @@ type dialWorker struct {
 	// ready when we have more addresses to dial (nextDial is not empty)
 	triggerDial <-chan struct{}
 
+	// ds schedules dials for a request
+	ds *dialScheduler
+
 	// for testing
 	wg sync.WaitGroup
 }
@@ -68,6 +71,7 @@ func newDialWorker(s *Swarm, p peer.ID, reqch <-chan dialRequest) *dialWorker {
 		requests: make(map[int]*pendRequest),
 		pending:  make(map[ma.Multiaddr]*addrDial),
 		resch:    make(chan dialResult),
+		ds:       newDialScheduler(),
 	}
 }
 
@@ -79,12 +83,14 @@ func (w *dialWorker) loop() {
 	// used to signal readiness to dial and completion of the dial
 	ready := make(chan struct{})
 	close(ready)
-
+	currDials := 0
+	w.ds.start()
 loop:
 	for {
 		select {
 		case req, ok := <-w.reqch:
 			if !ok {
+				w.ds.close()
 				return
 			}
 
@@ -100,10 +106,6 @@ loop:
 				continue loop
 			}
 
-			// at this point, len(addrs) > 0 or else it would be error from addrsForDial
-			// ranke them to process in order
-			addrs = w.rankAddrs(addrs)
-
 			// create the pending request object
 			pr := &pendRequest{
 				req:   req,
@@ -114,15 +116,10 @@ loop:
 				pr.addrs[a] = struct{}{}
 			}
 
-			// check if any of the addrs has been successfully dialed and accumulate
-			// errors from complete dials while collecting new addrs to dial/join
-			var todial []ma.Multiaddr
-			var tojoin []*addrDial
-
-			for _, a := range addrs {
+			// check if any of the address have a completed dial already
+			for a := range pr.addrs {
 				ad, ok := w.pending[a]
-				if !ok {
-					todial = append(todial, a)
+				if !ok || !ad.dialed {
 					continue
 				}
 
@@ -138,13 +135,10 @@ loop:
 					delete(pr.addrs, a)
 					continue
 				}
-
-				// dial is still pending, add to the join list
-				tojoin = append(tojoin, ad)
 			}
 
-			if len(todial) == 0 && len(tojoin) == 0 {
-				// all request applicable addrs have been dialed, we must have errored
+			// all request applicable addrs have been dialed, we must have errored
+			if len(pr.addrs) == 0 {
 				req.resch <- dialResponse{err: pr.err}
 				continue loop
 			}
@@ -153,45 +147,54 @@ loop:
 			w.reqno++
 			w.requests[w.reqno] = pr
 
-			for _, ad := range tojoin {
-				if simConnect, isClient, reason := network.GetSimultaneousConnect(req.ctx); simConnect {
-					if simConnect, _, _ := network.GetSimultaneousConnect(ad.ctx); !simConnect {
-						ad.ctx = network.WithSimultaneousConnect(ad.ctx, isClient, reason)
+			var toschedule []ma.Multiaddr
+			for a := range pr.addrs {
+				ad, ok := w.pending[a]
+				if !ok {
+					w.pending[a] = &addrDial{
+						addr:     a,
+						ctx:      req.ctx,
+						requests: []int{w.reqno},
 					}
+				} else {
+					if simConnect, isClient, reason := network.GetSimultaneousConnect(req.ctx); simConnect {
+						if simConnect, _, _ := network.GetSimultaneousConnect(ad.ctx); !simConnect {
+							ad.ctx = network.WithSimultaneousConnect(ad.ctx, isClient, reason)
+						}
+					}
+					ad.requests = append(ad.requests, w.reqno)
 				}
-				ad.requests = append(ad.requests, w.reqno)
+				toschedule = append(toschedule, a)
 			}
 
-			if len(todial) > 0 {
-				for _, a := range todial {
-					w.pending[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
-				}
-
-				w.nextDial = append(w.nextDial, todial...)
-				w.nextDial = w.rankAddrs(w.nextDial)
-
-				// trigger a new dial now to account for the new addrs we added
-				w.triggerDial = ready
+			simConnect, _, _ := network.GetSimultaneousConnect(req.ctx)
+			w.ds.schedule(toschedule, simConnect)
+			if currDials == 0 {
+				w.ds.triggerNext()
 			}
 
-		case <-w.triggerDial:
-			for _, addr := range w.nextDial {
-				// spawn the dial
-				ad := w.pending[addr]
-				err := w.s.dialNextAddr(ad.ctx, w.peer, addr, w.resch)
-				if err != nil {
-					w.dispatchError(ad, err)
-				}
+		case addr := <-w.ds.C:
+			// spawn the dial
+			ad := w.pending[addr]
+			if ad.dialed {
+				continue loop
 			}
-
-			w.nextDial = nil
-			w.triggerDial = nil
+			ad.dialed = true
+			err := w.s.dialNextAddr(ad.ctx, w.peer, addr, w.resch)
+			if err != nil {
+				w.dispatchError(ad, err)
+			} else {
+				currDials++
+			}
 
 		case res := <-w.resch:
 			if res.Conn != nil {
 				w.connected = true
 			}
-
+			currDials--
+			if currDials == 0 {
+				w.ds.triggerNext()
+			}
 			ad := w.pending[res.Addr]
 
 			if res.Conn != nil {
@@ -273,41 +276,4 @@ func (w *dialWorker) dispatchError(ad *addrDial, err error) {
 	if err == ErrDialBackoff {
 		delete(w.pending, ad.addr)
 	}
-}
-
-// ranks addresses in descending order of preference for dialing, with the following rules:
-// NonRelay > Relay
-// NonWS > WS
-// Private > Public
-// UDP > TCP
-func (w *dialWorker) rankAddrs(addrs []ma.Multiaddr) []ma.Multiaddr {
-	addrTier := func(a ma.Multiaddr) (tier int) {
-		if isRelayAddr(a) {
-			tier |= 0b1000
-		}
-		if isExpensiveAddr(a) {
-			tier |= 0b0100
-		}
-		if !manet.IsPrivateAddr(a) {
-			tier |= 0b0010
-		}
-		if isFdConsumingAddr(a) {
-			tier |= 0b0001
-		}
-
-		return tier
-	}
-
-	tiers := make([][]ma.Multiaddr, 16)
-	for _, a := range addrs {
-		tier := addrTier(a)
-		tiers[tier] = append(tiers[tier], a)
-	}
-
-	result := make([]ma.Multiaddr, 0, len(addrs))
-	for _, tier := range tiers {
-		result = append(result, tier...)
-	}
-
-	return result
 }
