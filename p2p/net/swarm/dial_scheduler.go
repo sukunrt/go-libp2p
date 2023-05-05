@@ -1,44 +1,46 @@
 package swarm
 
 import (
+	"context"
 	"math"
 	"sort"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/network"
 	ma "github.com/multiformats/go-multiaddr"
 )
 
 type dialScheduler struct {
-	q            []network.AddrDelay
-	pos          map[ma.Multiaddr]int
-	ranker       network.DialRanker
-	dialCh       chan ma.Multiaddr
-	triggerCh    chan struct{}
-	reqCh        chan dialSchedule
-	timer        *time.Timer
-	timerRunning bool
-	st           time.Time
+	q     []dialTask
+	tasks map[ma.Multiaddr]*taskState
+	reqCh chan dialTask
+	st    time.Time
 }
 
-type dialSchedule struct {
-	addrs      []ma.Multiaddr
-	simConnect bool
+type dialTask struct {
+	addr         ma.Multiaddr
+	delay        time.Duration
+	dialFunc     func()
+	isSimConnect bool
+}
+
+type taskStatus int
+
+const (
+	scheduled taskStatus = iota
+	dialed
+	completed
+)
+
+type taskState struct {
+	status       taskStatus
+	delay        time.Duration
+	isSimConnect bool
 }
 
 func newDialScheduler() *dialScheduler {
 	return &dialScheduler{
-		dialCh:    make(chan ma.Multiaddr, 1),
-		reqCh:     make(chan dialSchedule, 1),
-		pos:       make(map[ma.Multiaddr]int),
-		triggerCh: make(chan struct{}),
-	}
-}
-
-func (ds *dialScheduler) triggerNext() {
-	select {
-	case ds.triggerCh <- struct{}{}:
-	default:
+		reqCh: make(chan dialTask, 1),
+		tasks: make(map[ma.Multiaddr]*taskState),
 	}
 }
 
@@ -52,62 +54,82 @@ func (ds *dialScheduler) close() {
 
 func (ds *dialScheduler) loop() {
 	ds.st = time.Now()
-	ds.timer = time.NewTimer(math.MaxInt64)
-	ds.timerRunning = true
+	timer := time.NewTimer(math.MaxInt64)
+	timerRunning := true
 	trigger := false
+	ctx, cancel := context.WithCancel(context.Background())
+	doneCh := make(chan ma.Multiaddr, 1)
+	currDials := 0
 	for {
 		select {
-		case <-ds.timer.C:
+		case <-timer.C:
 			var i int
 			for i = 0; i < len(ds.q); i++ {
-				if ds.q[i].Delay == ds.q[0].Delay {
-					ds.dialCh <- ds.q[i].Addr
-					delete(ds.pos, ds.q[i].Addr)
+				if ds.q[i].delay != ds.q[0].delay {
+					break
 				}
+				st, ok := ds.tasks[ds.q[i].addr]
+				if !ok {
+					// shouldn't happen but for safety
+					log.Errorf("no dial scheduled for %s", ds.q[i].addr)
+					continue
+				}
+				st.status = dialed
+				currDials++
+				go func(task dialTask) {
+					task.dialFunc()
+					select {
+					case doneCh <- task.addr:
+					case <-ctx.Done():
+					}
+				}(ds.q[i])
 			}
 			ds.q = ds.q[i:]
-		case req, ok := <-ds.reqCh:
+			timerRunning = false
+		case task, ok := <-ds.reqCh:
 			if !ok {
+				cancel()
 				return
 			}
-			var ranking []network.AddrDelay
-			if req.simConnect {
-				ranking = noDelayRanker(req.addrs)
+			st, ok := ds.tasks[task.addr]
+			if !ok {
+				ds.q = append(ds.q, task)
+				ds.tasks[task.addr] = &taskState{
+					status:       scheduled,
+					delay:        task.delay,
+					isSimConnect: task.isSimConnect,
+				}
+			} else if !st.isSimConnect && task.isSimConnect && st.status == scheduled {
+				st.isSimConnect = true
+				st.delay = task.delay
+				st.status = scheduled
+				for i, a := range ds.q {
+					if a.addr.Equal(task.addr) {
+						ds.q[i] = task
+						break
+					}
+				}
+			}
+			sort.Slice(ds.q, func(i, j int) bool { return ds.q[i].delay < ds.q[j].delay })
+		case a := <-doneCh:
+			currDials--
+			if currDials == 0 {
+				trigger = true
+			}
+			delete(ds.tasks, a)
+		}
+		if timerRunning && !timer.Stop() {
+			<-timer.C
+		}
+		timerRunning = false
+		if len(ds.q) > 0 {
+			if trigger {
+				timer.Reset(-1)
 			} else {
-				ranking = defaultDialRanker(req.addrs)
+				timer.Reset(time.Until(ds.st.Add(ds.q[0].delay)))
 			}
-			for _, ad := range ranking {
-				pos, ok := ds.pos[ad.Addr]
-				if !ok {
-					ds.q = append(ds.q, ad)
-				}
-				if ds.q[pos].Delay < ad.Delay {
-					ds.q[pos].Delay = ad.Delay
-				}
-			}
-			sort.Slice(ds.q, func(i, j int) bool { return ds.q[i].Delay < ds.q[j].Delay })
-			for i, a := range ds.q {
-				ds.pos[a.Addr] = i
-			}
-		case <-ds.triggerCh:
-			trigger = true
+			timerRunning = true
 		}
-		ds.resetTimer(trigger)
 		trigger = false
-	}
-}
-
-func (ds *dialScheduler) resetTimer(trigger bool) {
-	if ds.timerRunning && !ds.timer.Stop() {
-		<-ds.timer.C
-	}
-	ds.timerRunning = false
-	if len(ds.q) > 0 {
-		if trigger {
-			ds.timer.Reset(-1)
-		} else {
-			ds.timer.Reset(time.Until(ds.st.Add(ds.q[0].Delay)))
-		}
-		ds.timerRunning = true
 	}
 }
