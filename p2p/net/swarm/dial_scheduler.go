@@ -108,11 +108,7 @@ func (ds *dialScheduler) loop() {
 					delay:        task.delay,
 					isSimConnect: task.isSimConnect,
 				}
-				for x := range ds.tasks {
-					log.Errorf("state %s", x)
-				}
-				log.Errorf("\n")
-			} else if !st.isSimConnect && task.isSimConnect && st.status == scheduled {
+			} else if !st.isSimConnect && task.isSimConnect && st.status != dialed {
 				st.isSimConnect = true
 				st.delay = task.delay
 				st.status = scheduled
@@ -122,16 +118,13 @@ func (ds *dialScheduler) loop() {
 						break
 					}
 				}
-			} else {
-				log.Errorf("dropping %s", task.addr)
 			}
 			sort.Slice(ds.q, func(i, j int) bool { return ds.q[i].delay < ds.q[j].delay })
 		case a := <-doneCh:
 			currDials--
-			log.Errorf("completed %s", a)
+			delete(ds.tasks, a)
 		case <-ds.triggerCh:
 			trigger = true
-			log.Errorf("triggering dials")
 		}
 		if timerRunning && !timer.Stop() {
 			<-timer.C

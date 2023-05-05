@@ -82,6 +82,7 @@ loop:
 		select {
 		case req, ok := <-w.reqch:
 			if !ok {
+				w.ds.close()
 				return
 			}
 
@@ -163,7 +164,6 @@ loop:
 			for _, ad := range tojoin {
 				addr := ad.addr
 				delay := addrDelay[addr]
-				log.Errorf("messaging: %s %s", w.s.LocalPeer(), addr)
 				w.ds.reqCh <- dialTask{
 					addr:  addr,
 					delay: delay,
