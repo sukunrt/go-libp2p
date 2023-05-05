@@ -502,7 +502,7 @@ func TestDialWorkerLoopRanking(t *testing.T) {
 	s1.ClosePeer(s2.LocalPeer())
 	s1.peers.ClearAddrs(s2.LocalPeer())
 	s2.Listen(quicAddr)
-	log.Errorf("hello world")
+
 	// should dial tcp immediately if there's no quic address available
 	s1.Peerstore().AddAddrs(s2.LocalPeer(), []ma.Multiaddr{tcpAddr}, peerstore.PermanentAddrTTL)
 	reqch = make(chan dialRequest)

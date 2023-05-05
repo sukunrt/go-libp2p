@@ -2,6 +2,8 @@ package swarm
 
 import (
 	"context"
+	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -38,7 +40,7 @@ type addrDial struct {
 	conn     *Conn
 	err      error
 	requests []int
-	delay    time.Duration
+	dialed   bool
 }
 
 type dialWorker struct {
@@ -49,7 +51,6 @@ type dialWorker struct {
 	requests map[int]*pendRequest
 	pending  map[ma.Multiaddr]*addrDial
 	resch    chan dialResult
-	ds       *dialScheduler
 
 	connected bool // true when a connection has been successfully established
 
@@ -65,7 +66,6 @@ func newDialWorker(s *Swarm, p peer.ID, reqch <-chan dialRequest) *dialWorker {
 		requests: make(map[int]*pendRequest),
 		pending:  make(map[ma.Multiaddr]*addrDial),
 		resch:    make(chan dialResult),
-		ds:       newDialScheduler(s),
 	}
 }
 
@@ -77,13 +77,30 @@ func (w *dialWorker) loop() {
 	// used to signal readiness to dial and completion of the dial
 	ready := make(chan struct{})
 	close(ready)
-	w.ds.start()
+	dq := dialQueue{}
+	currDials := 0
+	timer := time.NewTimer(math.MaxInt64)
+	timerRunning := false
+	st := time.Now()
+	scheduleNext := func() {
+		if timerRunning && !timer.Stop() {
+			<-timer.C
+		}
+		timerRunning = false
+		if dq.Len() > 0 {
+			if currDials == 0 {
+				timer = time.NewTimer(-1)
+			} else {
+				timer = time.NewTimer(time.Until(st.Add(dq.Top().Delay)))
+			}
+			timerRunning = true
+		}
+	}
 loop:
 	for {
 		select {
 		case req, ok := <-w.reqch:
 			if !ok {
-				w.ds.close()
 				return
 			}
 
@@ -99,6 +116,8 @@ loop:
 				continue loop
 			}
 
+			// at this point, len(addrs) > 0 or else it would be error from addrsForDial
+			// ranke them to process in order
 			// at this point, len(addrs) > 0 or else it would be error from addrsForDial
 			// ranke them to process in order
 			simConnect, _, _ := network.GetSimultaneousConnect(req.ctx)
@@ -127,6 +146,7 @@ loop:
 					todial = append(todial, a)
 					continue
 				}
+
 				if ad.conn != nil {
 					// dial to this addr was successful, complete the request
 					req.resch <- dialResponse{conn: ad.conn}
@@ -155,42 +175,45 @@ loop:
 			w.requests[w.reqno] = pr
 
 			for _, ad := range tojoin {
+				if !ad.dialed {
+					if simConnect, isClient, reason := network.GetSimultaneousConnect(req.ctx); simConnect {
+						if simConnect, _, _ := network.GetSimultaneousConnect(ad.ctx); !simConnect {
+							ad.ctx = network.WithSimultaneousConnect(ad.ctx, isClient, reason)
+							dq.Add(network.AddrDelay{Addr: ad.addr, Delay: addrDelay[ad.addr]})
+						}
+					}
+				}
 				ad.requests = append(ad.requests, w.reqno)
 			}
 
-			for _, a := range todial {
-				w.pending[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}, delay: addrDelay[a]}
-				addr := a
-				delay := addrDelay[a]
-				w.ds.reqCh <- dialTask{
-					addr:         addr,
-					delay:        delay,
-					peer:         w.peer,
-					resCh:        w.resch,
-					isSimConnect: simConnect,
-					ctx:          req.ctx,
+			if len(todial) > 0 {
+				for _, a := range todial {
+					w.pending[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
+					dq.Add(network.AddrDelay{Addr: a, Delay: addrDelay[a]})
 				}
 			}
-			for _, ad := range tojoin {
-				if ad.delay == addrDelay[ad.addr] {
-					continue
-				}
-				addr := ad.addr
-				delay := addrDelay[addr]
-				w.ds.reqCh <- dialTask{
-					addr:         addr,
-					delay:        delay,
-					peer:         w.peer,
-					resCh:        w.resch,
-					isSimConnect: simConnect,
-					ctx:          req.ctx,
+			scheduleNext()
+
+		case <-timer.C:
+			for _, adelay := range dq.NextBatch() {
+				// spawn the dial
+				ad := w.pending[adelay.Addr]
+				ad.dialed = true
+				err := w.s.dialNextAddr(ad.ctx, w.peer, ad.addr, w.resch)
+				if err != nil {
+					w.dispatchError(ad, err)
+				} else {
+					currDials++
 				}
 			}
+			timerRunning = false
+			scheduleNext()
+
 		case res := <-w.resch:
 			if res.Conn != nil {
 				w.connected = true
 			}
-
+			currDials--
 			ad := w.pending[res.Addr]
 
 			if res.Conn != nil {
@@ -222,14 +245,14 @@ loop:
 			}
 
 			// it must be an error -- add backoff if applicable and dispatch
-			if res.Err != context.Canceled && res.Err != ErrDialBackoff && !w.connected {
+			if res.Err != context.Canceled && !w.connected {
 				// we only add backoff if there has not been a successful connection
 				// for consistency with the old dialer behavior.
 				w.s.backf.AddBackoff(w.peer, res.Addr)
 			}
 
 			w.dispatchError(ad, res.Err)
-			w.ds.maybeTrigger()
+			scheduleNext()
 		}
 	}
 }
@@ -280,4 +303,47 @@ func (w *dialWorker) rankAddrs(addrs []ma.Multiaddr, isSimConnect bool) []networ
 		return noDelayRanker(addrs)
 	}
 	return w.s.dialRanker(addrs)
+}
+
+type dialQueue struct {
+	q []network.AddrDelay
+}
+
+func (dq *dialQueue) Len() int {
+	return len(dq.q)
+}
+
+func (dq *dialQueue) Top() network.AddrDelay {
+	return dq.q[0]
+}
+
+func (dq *dialQueue) NextBatch() []network.AddrDelay {
+	if dq.Len() == 0 {
+		return nil
+	}
+	res := make([]network.AddrDelay, 0)
+	i := 0
+	for i = 0; i < len(dq.q); i++ {
+		if dq.q[i].Delay != dq.q[0].Delay {
+			break
+		}
+		res = append(res, dq.q[i])
+	}
+	dq.q = dq.q[i:]
+	return res
+}
+
+func (dq *dialQueue) Add(adelay network.AddrDelay) {
+	updated := false
+	for i := 0; i < len(dq.q); i++ {
+		if dq.q[i].Addr.Equal(adelay.Addr) {
+			dq.q[i] = adelay
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		dq.q = append(dq.q, adelay)
+	}
+	sort.Slice(dq.q, func(i, j int) bool { return dq.q[i].Delay < dq.q[j].Delay })
 }
