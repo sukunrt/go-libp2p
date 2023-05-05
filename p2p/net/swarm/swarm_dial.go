@@ -542,13 +542,6 @@ func isFdConsumingAddr(addr ma.Multiaddr) bool {
 	return err1 == nil || err2 == nil
 }
 
-func isExpensiveAddr(addr ma.Multiaddr) bool {
-	_, wsErr := addr.ValueForProtocol(ma.P_WS)
-	_, wssErr := addr.ValueForProtocol(ma.P_WSS)
-	_, wtErr := addr.ValueForProtocol(ma.P_WEBTRANSPORT)
-	return wsErr == nil || wssErr == nil || wtErr == nil
-}
-
 func isRelayAddr(addr ma.Multiaddr) bool {
 	_, err := addr.ValueForProtocol(ma.P_CIRCUIT)
 	return err == nil
