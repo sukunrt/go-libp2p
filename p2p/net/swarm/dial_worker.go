@@ -38,6 +38,7 @@ type addrDial struct {
 	conn     *Conn
 	err      error
 	requests []int
+	delay    time.Duration
 }
 
 type dialWorker struct {
@@ -64,7 +65,7 @@ func newDialWorker(s *Swarm, p peer.ID, reqch <-chan dialRequest) *dialWorker {
 		requests: make(map[int]*pendRequest),
 		pending:  make(map[ma.Multiaddr]*addrDial),
 		resch:    make(chan dialResult),
-		ds:       newDialScheduler(),
+		ds:       newDialScheduler(s),
 	}
 }
 
@@ -158,30 +159,31 @@ loop:
 			}
 
 			for _, a := range todial {
-				w.pending[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
-				tojoin = append(tojoin, w.pending[a])
+				w.pending[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}, delay: addrDelay[a]}
+				addr := a
+				delay := addrDelay[a]
+				w.ds.reqCh <- dialTask{
+					addr:         addr,
+					delay:        delay,
+					peer:         w.peer,
+					resCh:        w.resch,
+					isSimConnect: simConnect,
+					ctx:          req.ctx,
+				}
 			}
 			for _, ad := range tojoin {
+				if ad.delay == addrDelay[ad.addr] {
+					continue
+				}
 				addr := ad.addr
 				delay := addrDelay[addr]
 				w.ds.reqCh <- dialTask{
-					addr:  addr,
-					delay: delay,
-					dialFunc: func() {
-						err := w.s.dialNextAddr(req.ctx, w.peer, addr, w.resch)
-						if err != nil {
-							select {
-							case w.resch <- dialResult{
-								Conn: nil,
-								Addr: addr,
-								Err:  err,
-							}:
-							case <-req.ctx.Done():
-							}
-						}
-
-					},
+					addr:         addr,
+					delay:        delay,
+					peer:         w.peer,
+					resCh:        w.resch,
 					isSimConnect: simConnect,
+					ctx:          req.ctx,
 				}
 			}
 		case res := <-w.resch:
