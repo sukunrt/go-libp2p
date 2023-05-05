@@ -10,10 +10,11 @@ import (
 )
 
 type dialScheduler struct {
-	q     []dialTask
-	tasks map[ma.Multiaddr]*taskState
-	reqCh chan dialTask
-	st    time.Time
+	q         []dialTask
+	tasks     map[ma.Multiaddr]*taskState
+	reqCh     chan dialTask
+	st        time.Time
+	triggerCh chan struct{}
 }
 
 type dialTask struct {
@@ -39,8 +40,9 @@ type taskState struct {
 
 func newDialScheduler() *dialScheduler {
 	return &dialScheduler{
-		reqCh: make(chan dialTask, 1),
-		tasks: make(map[ma.Multiaddr]*taskState),
+		reqCh:     make(chan dialTask, 1),
+		tasks:     make(map[ma.Multiaddr]*taskState),
+		triggerCh: make(chan struct{}),
 	}
 }
 
@@ -50,6 +52,13 @@ func (ds *dialScheduler) start() {
 
 func (ds *dialScheduler) close() {
 	close(ds.reqCh)
+}
+
+func (ds *dialScheduler) maybeTrigger() {
+	select {
+	case ds.triggerCh <- struct{}{}:
+	default:
+	}
 }
 
 func (ds *dialScheduler) loop() {
@@ -99,6 +108,10 @@ func (ds *dialScheduler) loop() {
 					delay:        task.delay,
 					isSimConnect: task.isSimConnect,
 				}
+				for x := range ds.tasks {
+					log.Errorf("state %s", x)
+				}
+				log.Errorf("\n")
 			} else if !st.isSimConnect && task.isSimConnect && st.status == scheduled {
 				st.isSimConnect = true
 				st.delay = task.delay
@@ -109,21 +122,23 @@ func (ds *dialScheduler) loop() {
 						break
 					}
 				}
+			} else {
+				log.Errorf("dropping %s", task.addr)
 			}
 			sort.Slice(ds.q, func(i, j int) bool { return ds.q[i].delay < ds.q[j].delay })
 		case a := <-doneCh:
 			currDials--
-			if currDials == 0 {
-				trigger = true
-			}
-			delete(ds.tasks, a)
+			log.Errorf("completed %s", a)
+		case <-ds.triggerCh:
+			trigger = true
+			log.Errorf("triggering dials")
 		}
 		if timerRunning && !timer.Stop() {
 			<-timer.C
 		}
 		timerRunning = false
 		if len(ds.q) > 0 {
-			if trigger {
+			if trigger && currDials == 0 {
 				timer.Reset(-1)
 			} else {
 				timer.Reset(time.Until(ds.st.Add(ds.q[0].delay)))

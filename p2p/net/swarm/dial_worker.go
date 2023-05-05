@@ -125,7 +125,6 @@ loop:
 					todial = append(todial, a)
 					continue
 				}
-
 				if ad.conn != nil {
 					// dial to this addr was successful, complete the request
 					req.resch <- dialResponse{conn: ad.conn}
@@ -157,15 +156,14 @@ loop:
 				ad.requests = append(ad.requests, w.reqno)
 			}
 
-			if len(todial) > 0 {
-				for _, a := range todial {
-					w.pending[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
-					tojoin = append(tojoin, w.pending[a])
-				}
+			for _, a := range todial {
+				w.pending[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
+				tojoin = append(tojoin, w.pending[a])
 			}
 			for _, ad := range tojoin {
 				addr := ad.addr
 				delay := addrDelay[addr]
+				log.Errorf("messaging: %s %s", w.s.LocalPeer(), addr)
 				w.ds.reqCh <- dialTask{
 					addr:  addr,
 					delay: delay,
@@ -222,13 +220,14 @@ loop:
 			}
 
 			// it must be an error -- add backoff if applicable and dispatch
-			if res.Err != context.Canceled && !w.connected {
+			if res.Err != context.Canceled && res.Err != ErrDialBackoff && !w.connected {
 				// we only add backoff if there has not been a successful connection
 				// for consistency with the old dialer behavior.
 				w.s.backf.AddBackoff(w.peer, res.Addr)
 			}
 
 			w.dispatchError(ad, res.Err)
+			w.ds.maybeTrigger()
 		}
 	}
 }
