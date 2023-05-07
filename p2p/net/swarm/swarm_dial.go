@@ -295,7 +295,7 @@ func (s *Swarm) dialPeer(ctx context.Context, p peer.ID) (*Conn, error) {
 
 // dialWorkerLoop synchronizes and executes concurrent dials to a single peer
 func (s *Swarm) dialWorkerLoop(p peer.ID, reqch <-chan dialRequest) {
-	w := newDialWorker(s, p, reqch)
+	w := newDialWorker(s, p, reqch, nil)
 	w.loop()
 }
 
@@ -540,13 +540,6 @@ func isFdConsumingAddr(addr ma.Multiaddr) bool {
 	_, err1 := first.ValueForProtocol(ma.P_TCP)
 	_, err2 := first.ValueForProtocol(ma.P_UNIX)
 	return err1 == nil || err2 == nil
-}
-
-func isExpensiveAddr(addr ma.Multiaddr) bool {
-	_, wsErr := addr.ValueForProtocol(ma.P_WS)
-	_, wssErr := addr.ValueForProtocol(ma.P_WSS)
-	_, wtErr := addr.ValueForProtocol(ma.P_WEBTRANSPORT)
-	return wsErr == nil || wssErr == nil || wtErr == nil
 }
 
 func isRelayAddr(addr ma.Multiaddr) bool {

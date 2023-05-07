@@ -2,13 +2,14 @@ package swarm
 
 import (
 	"context"
+	"math"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	ma "github.com/multiformats/go-multiaddr"
-	manet "github.com/multiformats/go-multiaddr/net"
 )
 
 // /////////////////////////////////////////////////////////////////////////////////
@@ -38,6 +39,7 @@ type addrDial struct {
 	conn     *Conn
 	err      error
 	requests []int
+	dialed   bool
 }
 
 type dialWorker struct {
@@ -51,16 +53,15 @@ type dialWorker struct {
 
 	connected bool // true when a connection has been successfully established
 
-	nextDial []ma.Multiaddr
-
-	// ready when we have more addresses to dial (nextDial is not empty)
-	triggerDial <-chan struct{}
-
 	// for testing
 	wg sync.WaitGroup
+	cl Clock
 }
 
-func newDialWorker(s *Swarm, p peer.ID, reqch <-chan dialRequest) *dialWorker {
+func newDialWorker(s *Swarm, p peer.ID, reqch <-chan dialRequest, cl Clock) *dialWorker {
+	if cl == nil {
+		cl = RealClock{}
+	}
 	return &dialWorker{
 		s:        s,
 		peer:     p,
@@ -68,6 +69,7 @@ func newDialWorker(s *Swarm, p peer.ID, reqch <-chan dialRequest) *dialWorker {
 		requests: make(map[int]*pendRequest),
 		pending:  make(map[ma.Multiaddr]*addrDial),
 		resch:    make(chan dialResult),
+		cl:       cl,
 	}
 }
 
@@ -79,7 +81,25 @@ func (w *dialWorker) loop() {
 	// used to signal readiness to dial and completion of the dial
 	ready := make(chan struct{})
 	close(ready)
-
+	dq := newDialQueue()
+	currDials := 0
+	st := w.cl.Now()
+	timer := w.cl.InstantTimer(st.Add(math.MaxInt64))
+	timerRunning := true
+	scheduleNext := func() {
+		if timerRunning && !timer.Stop() {
+			<-timer.Ch()
+		}
+		timerRunning = false
+		if dq.len() > 0 {
+			if currDials == 0 {
+				timer.Reset(st)
+			} else {
+				timer.Reset(st.Add(dq.top().Delay))
+			}
+			timerRunning = true
+		}
+	}
 loop:
 	for {
 		select {
@@ -102,7 +122,11 @@ loop:
 
 			// at this point, len(addrs) > 0 or else it would be error from addrsForDial
 			// ranke them to process in order
-			addrs = w.rankAddrs(addrs)
+			// at this point, len(addrs) > 0 or else it would be error from addrsForDial
+			// ranke them to process in order
+			simConnect, _, _ := network.GetSimultaneousConnect(req.ctx)
+			addrRanking := w.rankAddrs(addrs, simConnect)
+			addrDelay := make(map[ma.Multiaddr]time.Duration)
 
 			// create the pending request object
 			pr := &pendRequest{
@@ -110,8 +134,9 @@ loop:
 				err:   &DialError{Peer: w.peer},
 				addrs: make(map[ma.Multiaddr]struct{}),
 			}
-			for _, a := range addrs {
-				pr.addrs[a] = struct{}{}
+			for _, adelay := range addrRanking {
+				pr.addrs[adelay.Addr] = struct{}{}
+				addrDelay[adelay.Addr] = adelay.Delay
 			}
 
 			// check if any of the addrs has been successfully dialed and accumulate
@@ -119,10 +144,10 @@ loop:
 			var todial []ma.Multiaddr
 			var tojoin []*addrDial
 
-			for _, a := range addrs {
-				ad, ok := w.pending[a]
+			for _, adelay := range addrRanking {
+				ad, ok := w.pending[adelay.Addr]
 				if !ok {
-					todial = append(todial, a)
+					todial = append(todial, adelay.Addr)
 					continue
 				}
 
@@ -134,8 +159,8 @@ loop:
 
 				if ad.err != nil {
 					// dial to this addr errored, accumulate the error
-					pr.err.recordErr(a, ad.err)
-					delete(pr.addrs, a)
+					pr.err.recordErr(ad.addr, ad.err)
+					delete(pr.addrs, ad.addr)
 					continue
 				}
 
@@ -154,9 +179,12 @@ loop:
 			w.requests[w.reqno] = pr
 
 			for _, ad := range tojoin {
-				if simConnect, isClient, reason := network.GetSimultaneousConnect(req.ctx); simConnect {
-					if simConnect, _, _ := network.GetSimultaneousConnect(ad.ctx); !simConnect {
-						ad.ctx = network.WithSimultaneousConnect(ad.ctx, isClient, reason)
+				if !ad.dialed {
+					if simConnect, isClient, reason := network.GetSimultaneousConnect(req.ctx); simConnect {
+						if simConnect, _, _ := network.GetSimultaneousConnect(ad.ctx); !simConnect {
+							ad.ctx = network.WithSimultaneousConnect(ad.ctx, isClient, reason)
+							dq.add(network.AddrDelay{Addr: ad.addr, Delay: addrDelay[ad.addr]})
+						}
 					}
 				}
 				ad.requests = append(ad.requests, w.reqno)
@@ -165,33 +193,31 @@ loop:
 			if len(todial) > 0 {
 				for _, a := range todial {
 					w.pending[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
+					dq.add(network.AddrDelay{Addr: a, Delay: addrDelay[a]})
 				}
-
-				w.nextDial = append(w.nextDial, todial...)
-				w.nextDial = w.rankAddrs(w.nextDial)
-
-				// trigger a new dial now to account for the new addrs we added
-				w.triggerDial = ready
 			}
+			scheduleNext()
 
-		case <-w.triggerDial:
-			for _, addr := range w.nextDial {
+		case <-timer.Ch():
+			for _, adelay := range dq.nextBatch() {
 				// spawn the dial
-				ad := w.pending[addr]
-				err := w.s.dialNextAddr(ad.ctx, w.peer, addr, w.resch)
+				ad := w.pending[adelay.Addr]
+				ad.dialed = true
+				err := w.s.dialNextAddr(ad.ctx, w.peer, ad.addr, w.resch)
 				if err != nil {
 					w.dispatchError(ad, err)
+				} else {
+					currDials++
 				}
 			}
-
-			w.nextDial = nil
-			w.triggerDial = nil
+			timerRunning = false
+			scheduleNext()
 
 		case res := <-w.resch:
 			if res.Conn != nil {
 				w.connected = true
 			}
-
+			currDials--
 			ad := w.pending[res.Addr]
 
 			if res.Conn != nil {
@@ -228,8 +254,8 @@ loop:
 				// for consistency with the old dialer behavior.
 				w.s.backf.AddBackoff(w.peer, res.Addr)
 			}
-
 			w.dispatchError(ad, res.Err)
+			scheduleNext()
 		}
 	}
 }
@@ -275,39 +301,130 @@ func (w *dialWorker) dispatchError(ad *addrDial, err error) {
 	}
 }
 
-// ranks addresses in descending order of preference for dialing, with the following rules:
-// NonRelay > Relay
-// NonWS > WS
-// Private > Public
-// UDP > TCP
-func (w *dialWorker) rankAddrs(addrs []ma.Multiaddr) []ma.Multiaddr {
-	addrTier := func(a ma.Multiaddr) (tier int) {
-		if isRelayAddr(a) {
-			tier |= 0b1000
-		}
-		if isExpensiveAddr(a) {
-			tier |= 0b0100
-		}
-		if !manet.IsPrivateAddr(a) {
-			tier |= 0b0010
-		}
-		if isFdConsumingAddr(a) {
-			tier |= 0b0001
-		}
-
-		return tier
+func (w *dialWorker) rankAddrs(addrs []ma.Multiaddr, isSimConnect bool) []network.AddrDelay {
+	if isSimConnect {
+		return noDelayRanker(addrs)
 	}
+	return w.s.dialRanker(addrs)
+}
 
-	tiers := make([][]ma.Multiaddr, 16)
-	for _, a := range addrs {
-		tier := addrTier(a)
-		tiers[tier] = append(tiers[tier], a)
+type dialQueue struct {
+	q   []network.AddrDelay
+	pos map[ma.Multiaddr]int
+}
+
+func newDialQueue() *dialQueue {
+	return &dialQueue{pos: make(map[ma.Multiaddr]int)}
+}
+
+func (dq *dialQueue) add(adelay network.AddrDelay) {
+	dq.remove(adelay.Addr)
+	dq.q = append(dq.q, adelay)
+	dq.pos[adelay.Addr] = len(dq.q) - 1
+	dq.heapify(len(dq.q) - 1)
+}
+
+func (dq *dialQueue) swap(i, j int) {
+	dq.pos[dq.q[i].Addr] = j
+	dq.pos[dq.q[j].Addr] = i
+	dq.q[i], dq.q[j] = dq.q[j], dq.q[i]
+}
+
+func (dq *dialQueue) len() int {
+	return len(dq.q)
+}
+
+func (dq *dialQueue) top() network.AddrDelay {
+	return dq.q[0]
+}
+
+func (dq *dialQueue) pop() network.AddrDelay {
+	v := dq.q[0]
+	dq.remove(v.Addr)
+	return v
+}
+
+func (dq *dialQueue) remove(a ma.Multiaddr) {
+	pos, ok := dq.pos[a]
+	if !ok {
+		return
 	}
+	dq.swap(pos, len(dq.q)-1)
+	dq.q = dq.q[:len(dq.q)-1]
+	delete(dq.pos, a)
+	dq.heapify(pos)
+}
 
-	result := make([]ma.Multiaddr, 0, len(addrs))
-	for _, tier := range tiers {
-		result = append(result, tier...)
+func (dq *dialQueue) heapify(i int) {
+	if dq.len() == 0 {
+		return
 	}
+	for {
+		v := dq.q[i].Delay
+		l, r := 2*i+1, 2*i+2
+		if l >= dq.len() && r >= dq.len() {
+			if i == 0 {
+				return
+			}
+			i = (i - 1) / 2
+			continue
+		}
+		lv := dq.q[l].Delay
+		if v <= lv {
+			if r < dq.len() {
+				rv := dq.q[r].Delay
+				if v <= rv {
+					if i == 0 {
+						return
+					}
+					i = (i - 1) / 2
+					continue
+				} else {
+					dq.swap(i, r)
+					i = r
+					continue
+				}
+			} else {
+				if i == 0 {
+					return
+				}
+				i = (i - 1) / 2
+				continue
+			}
+		} else {
+			if r < dq.len() {
+				rv := dq.q[r].Delay
+				if lv <= rv {
+					dq.swap(i, l)
+					i = l
+					continue
+				} else {
+					dq.swap(i, r)
+					i = r
+					continue
+				}
+			} else {
+				dq.swap(i, l)
+				i = l
+				continue
+			}
+		}
+	}
+}
 
-	return result
+func (dq *dialQueue) nextBatch() []network.AddrDelay {
+	if dq.len() == 0 {
+		return nil
+	}
+	res := make([]network.AddrDelay, 0)
+	top := dq.top()
+	for len(dq.q) > 0 {
+		v := dq.pop()
+		if v.Delay != top.Delay {
+			dq.add(v)
+			break
+		}
+		res = append(res, v)
+	}
+	return res
 }
