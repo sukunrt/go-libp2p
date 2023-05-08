@@ -31,16 +31,19 @@ func TestNoDelayRanker(t *testing.T) {
 	}
 }
 
-func TestDelayRankerTCPDelay(t *testing.T) {
-	pquicv1 := ma.StringCast("/ip4/192.168.0.100/udp/1/quic-v1")
-	ptcp := ma.StringCast("/ip4/192.168.0.100/tcp/1/")
+func TestDelayRankerQUICDelay(t *testing.T) {
+	q1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic")
+	q1v1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1")
+	wt1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1/webtransport/")
+	q2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic")
+	q2v1 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic-v1")
+	q3 := ma.StringCast("/ip4/1.2.3.4/udp/3/quic")
+	q3v1 := ma.StringCast("/ip4/1.2.3.4/udp/3/quic-v1")
+	q4 := ma.StringCast("/ip4/1.2.3.4/udp/4/quic")
 
-	quic := ma.StringCast("/ip4/1.2.3.4/udp/1/quic")
-	quicv1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1")
-	tcp := ma.StringCast("/ip4/1.2.3.5/tcp/1/")
-
-	tcp6 := ma.StringCast("/ip6/1::1/tcp/1")
-	quicv16 := ma.StringCast("/ip6/1::2/udp/1/quic-v1")
+	q1v16 := ma.StringCast("/ip6/1::2/udp/1/quic-v1")
+	q2v16 := ma.StringCast("/ip6/1::2/udp/2/quic-v1")
+	q3v16 := ma.StringCast("/ip6/1::2/udp/3/quic-v1")
 
 	testCase := []struct {
 		name   string
@@ -48,36 +51,43 @@ func TestDelayRankerTCPDelay(t *testing.T) {
 		output []network.AddrDelay
 	}{
 		{
-			name:  "quic prioritised over tcp",
-			addrs: []ma.Multiaddr{quic, tcp},
+			name:  "single quic dialed first",
+			addrs: []ma.Multiaddr{q1, q2, q3, q4},
 			output: []network.AddrDelay{
-				{Addr: quic, Delay: 0},
-				{Addr: tcp, Delay: publicTCPDelay},
+				{Addr: q1, Delay: 0},
+				{Addr: q2, Delay: publicQUICDelay},
+				{Addr: q3, Delay: publicQUICDelay},
+				{Addr: q4, Delay: publicQUICDelay},
 			},
 		},
 		{
-			name:  "quic-v1 prioritised over tcp",
-			addrs: []ma.Multiaddr{quicv1, tcp},
+			name:  "quicv1 dialed before quic",
+			addrs: []ma.Multiaddr{q1, q2v1, q3, q4},
 			output: []network.AddrDelay{
-				{Addr: quicv1, Delay: 0},
-				{Addr: tcp, Delay: publicTCPDelay},
+				{Addr: q2v1, Delay: 0},
+				{Addr: q1, Delay: publicQUICDelay},
+				{Addr: q3, Delay: publicQUICDelay},
+				{Addr: q4, Delay: publicQUICDelay},
 			},
 		},
 		{
-			name:  "ip6 treated separately",
-			addrs: []ma.Multiaddr{quicv16, tcp6, quic},
+			name:  "quic+webtrans filtered when quicv1",
+			addrs: []ma.Multiaddr{q1, q2, q3, q4, q1v1, q2v1, q3v1, wt1},
 			output: []network.AddrDelay{
-				{Addr: quicv16, Delay: 0},
-				{Addr: quic, Delay: 0},
-				{Addr: tcp6, Delay: publicTCPDelay},
+				{Addr: q1v1, Delay: 0},
+				{Addr: q2v1, Delay: publicQUICDelay},
+				{Addr: q3v1, Delay: publicQUICDelay},
+				{Addr: q4, Delay: publicQUICDelay},
 			},
 		},
 		{
-			name:  "private addrs treated separately",
-			addrs: []ma.Multiaddr{pquicv1, ptcp},
+			name:  "ipv6",
+			addrs: []ma.Multiaddr{q1v16, q2v16, q3v16, q1},
 			output: []network.AddrDelay{
-				{Addr: pquicv1, Delay: 0},
-				{Addr: ptcp, Delay: privateTCPDelay},
+				{Addr: q1, Delay: 0},
+				{Addr: q1v16, Delay: 0},
+				{Addr: q2v16, Delay: publicQUICDelay},
+				{Addr: q3v16, Delay: publicQUICDelay},
 			},
 		},
 	}
@@ -107,30 +117,20 @@ func TestDelayRankerTCPDelay(t *testing.T) {
 			})
 			for i := 0; i < len(tc.output); i++ {
 				if !tc.output[i].Addr.Equal(res[i].Addr) || tc.output[i].Delay != res[i].Delay {
-					t.Errorf("expected %+v got %+v", tc.output[i], res[i])
+					t.Fatalf("expected %+v got %+v", tc.output, res)
 				}
 			}
 		})
 	}
 }
 
-func TestDelayRankerAddrDropped(t *testing.T) {
-	pquic := ma.StringCast("/ip4/192.168.0.100/udp/1/quic")
-	pquicv1 := ma.StringCast("/ip4/192.168.0.100/udp/1/quic-v1")
+func TestDelayRankerTCPDelay(t *testing.T) {
 
-	quicAddr := ma.StringCast("/ip4/1.2.3.4/udp/1/quic")
-	quicAddr2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic")
-	quicv1Addr := ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1")
-	wt := ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1/webtransport/")
-	wt2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic-v1/webtransport/")
+	q1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic")
+	q2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic")
 
-	quic6 := ma.StringCast("/ip6/1::1/udp/1/quic")
-	quicv16 := ma.StringCast("/ip6/1::1/udp/1/quic-v1")
-
-	tcp := ma.StringCast("/ip4/1.2.3.5/tcp/1/")
-	ws := ma.StringCast("/ip4/1.2.3.5/tcp/1/ws")
-	ws2 := ma.StringCast("/ip4/1.2.3.4/tcp/1/ws")
-	wss := ma.StringCast("/ip4/1.2.3.5/tcp/1/wss")
+	t1 := ma.StringCast("/ip4/1.2.3.5/tcp/1/")
+	t2 := ma.StringCast("/ip4/1.2.3.4/tcp/2")
 
 	testCase := []struct {
 		name   string
@@ -138,42 +138,30 @@ func TestDelayRankerAddrDropped(t *testing.T) {
 		output []network.AddrDelay
 	}{
 		{
-			name:  "quic dropped when quic-v1 present",
-			addrs: []ma.Multiaddr{quicAddr, quicv1Addr, quicAddr2},
+			name:  "2 quic with tcp",
+			addrs: []ma.Multiaddr{q1, q2, t1, t2},
 			output: []network.AddrDelay{
-				{Addr: quicv1Addr, Delay: 0},
-				{Addr: quicAddr2, Delay: 0},
+				{Addr: q1, Delay: 0},
+				{Addr: q2, Delay: publicQUICDelay},
+				{Addr: t1, Delay: publicQUICDelay + publicTCPDelay},
+				{Addr: t2, Delay: publicQUICDelay + publicTCPDelay},
 			},
 		},
 		{
-			name:  "webtransport dropped when quicv1 present",
-			addrs: []ma.Multiaddr{quicv1Addr, wt, wt2, quicAddr},
+			name:  "1 quic with tcp",
+			addrs: []ma.Multiaddr{q1, t1, t2},
 			output: []network.AddrDelay{
-				{Addr: quicv1Addr, Delay: 0},
-				{Addr: wt2, Delay: 0},
+				{Addr: q1, Delay: 0},
+				{Addr: t1, Delay: publicTCPDelay},
+				{Addr: t2, Delay: publicTCPDelay},
 			},
 		},
 		{
-			name:  "ip6 quic dropped when quicv1 present",
-			addrs: []ma.Multiaddr{quicv16, quic6},
+			name:  "no quic",
+			addrs: []ma.Multiaddr{t1, t2},
 			output: []network.AddrDelay{
-				{Addr: quicv16, Delay: 0},
-			},
-		},
-		{
-			name:  "web socket removed when tcp present",
-			addrs: []ma.Multiaddr{quicAddr, tcp, ws, wss, ws2},
-			output: []network.AddrDelay{
-				{Addr: quicAddr, Delay: 0},
-				{Addr: tcp, Delay: publicTCPDelay},
-				{Addr: ws2, Delay: publicTCPDelay},
-			},
-		},
-		{
-			name:  "private quic dropped when quiv1 present",
-			addrs: []ma.Multiaddr{pquic, pquicv1},
-			output: []network.AddrDelay{
-				{Addr: pquicv1, Delay: 0},
+				{Addr: t1, Delay: 0},
+				{Addr: t2, Delay: 0},
 			},
 		},
 	}
@@ -201,10 +189,9 @@ func TestDelayRankerAddrDropped(t *testing.T) {
 				}
 				return tc.output[i].Delay < tc.output[j].Delay
 			})
-
 			for i := 0; i < len(tc.output); i++ {
 				if !tc.output[i].Addr.Equal(res[i].Addr) || tc.output[i].Delay != res[i].Delay {
-					t.Errorf("expected %+v got %+v", tc.output[i], res[i])
+					t.Fatalf("expected %+v got %+v", tc.output, res)
 				}
 			}
 		})
@@ -212,8 +199,8 @@ func TestDelayRankerAddrDropped(t *testing.T) {
 }
 
 func TestDelayRankerRelay(t *testing.T) {
-	quicAddr := ma.StringCast("/ip4/1.2.3.4/udp/1/quic")
-	quicAddr2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic")
+	q1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic")
+	q2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic")
 
 	pid := test.RandPeerIDFatal(t)
 	r1 := ma.StringCast(fmt.Sprintf("/ip4/1.2.3.4/tcp/1/p2p-circuit/p2p/%s", pid))
@@ -226,10 +213,10 @@ func TestDelayRankerRelay(t *testing.T) {
 	}{
 		{
 			name:  "relay address delayed",
-			addrs: []ma.Multiaddr{quicAddr, quicAddr2, r1, r2},
+			addrs: []ma.Multiaddr{q1, q2, r1, r2},
 			output: []network.AddrDelay{
-				{Addr: quicAddr, Delay: 0},
-				{Addr: quicAddr2, Delay: 0},
+				{Addr: q1, Delay: 0},
+				{Addr: q2, Delay: publicQUICDelay},
 				{Addr: r2, Delay: relayDelay},
 				{Addr: r1, Delay: publicTCPDelay + relayDelay},
 			},
