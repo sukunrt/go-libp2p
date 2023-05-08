@@ -13,11 +13,11 @@ import (
 // The 250ms value is from happy eyeballs RFC 8305. This is a rough estimate of 1 RTT
 const (
 	// duration by which tcp dials are delayed relative to quic dial
-	publicTCPDelay  = 300 * time.Millisecond
+	publicTCPDelay  = 250 * time.Millisecond
 	privateTCPDelay = 30 * time.Millisecond
 
 	// duration by which quic dials are delayed relative to first quic dial
-	publicQUICDelay  = 300 * time.Millisecond
+	publicQUICDelay  = 250 * time.Millisecond
 	privateQUICDelay = 30 * time.Millisecond
 
 	// relayDelay is the duration by which relay dials are delayed relative to direct addresses
