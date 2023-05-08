@@ -13,15 +13,15 @@ import (
 // The 250ms value is from happy eyeballs RFC 8305. This is a rough estimate of 1 RTT
 const (
 	// duration by which tcp dials are delayed relative to quic dial
-	publicTCPDelay  = 250 * time.Millisecond
+	publicTCPDelay  = 300 * time.Millisecond
 	privateTCPDelay = 30 * time.Millisecond
 
 	// duration by which quic dials are delayed relative to first quic dial
-	publicQUICDelay  = 250 * time.Millisecond
+	publicQUICDelay  = 300 * time.Millisecond
 	privateQUICDelay = 30 * time.Millisecond
 
 	// relayDelay is the duration by which relay dials are delayed relative to direct addresses
-	relayDelay = 250 * time.Millisecond
+	relayDelay = 500 * time.Millisecond
 )
 
 // noDelayRanker ranks addresses with no delay. This is useful for simultaneous connect requests.
@@ -128,7 +128,6 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 	}
 
 	sort.Slice(selectedAddrs, func(i, j int) bool { return score(selectedAddrs[i]) < score(selectedAddrs[j]) })
-	log.Errorf("sorting %s", selectedAddrs)
 	res := make([]network.AddrDelay, 0, len(addrs))
 	quicCount := 0
 	for _, a := range selectedAddrs {

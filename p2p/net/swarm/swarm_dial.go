@@ -497,8 +497,13 @@ func (s *Swarm) dialAddr(ctx context.Context, p peer.ID, addr ma.Multiaddr) (tra
 	start := time.Now()
 	connC, err := tpt.Dial(ctx, addr, p)
 	if err != nil {
+		var conn network.Conn
+		conns := s.ConnsToPeer(p)
+		if len(conns) > 0 {
+			conn = conns[0]
+		}
 		if s.metricsTracer != nil {
-			s.metricsTracer.FailedDialing(addr, err)
+			s.metricsTracer.FailedDialing(addr, conn, err)
 		}
 		return nil, err
 	}
@@ -540,6 +545,13 @@ func isFdConsumingAddr(addr ma.Multiaddr) bool {
 	_, err1 := first.ValueForProtocol(ma.P_TCP)
 	_, err2 := first.ValueForProtocol(ma.P_UNIX)
 	return err1 == nil || err2 == nil
+}
+
+func isExpensiveAddr(addr ma.Multiaddr) bool {
+	_, wsErr := addr.ValueForProtocol(ma.P_WS)
+	_, wssErr := addr.ValueForProtocol(ma.P_WSS)
+	_, wtErr := addr.ValueForProtocol(ma.P_WEBTRANSPORT)
+	return wsErr == nil || wssErr == nil || wtErr == nil
 }
 
 func isRelayAddr(addr ma.Multiaddr) bool {

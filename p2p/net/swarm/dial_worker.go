@@ -109,11 +109,15 @@ func (w *dialWorker) loop() {
 			timerRunning = true
 		}
 	}
+	totalDials := 0
 loop:
 	for {
 		select {
 		case req, ok := <-w.reqch:
 			if !ok {
+				if totalDials > 0 && w.s.metricsTracer != nil {
+					w.s.metricsTracer.DialCompleted(totalDials)
+				}
 				return
 			}
 
@@ -219,15 +223,13 @@ loop:
 					w.dispatchError(ad, err)
 				} else {
 					currDials++
+					totalDials++
 				}
 			}
 			timerRunning = false
 			scheduleNextDial()
 
 		case res := <-w.resch:
-			if res.Conn != nil {
-				w.connected = true
-			}
 			currDials--
 			ad := w.pending[res.Addr]
 
@@ -239,6 +241,10 @@ loop:
 					res.Conn.Close()
 					w.dispatchError(ad, err)
 					continue loop
+				}
+				w.connected = true
+				if w.s.metricsTracer != nil {
+					w.s.metricsTracer.TimeToFirstConnection(time.Since(st))
 				}
 
 				// dispatch to still pending requests
