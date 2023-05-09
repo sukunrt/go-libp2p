@@ -233,19 +233,25 @@ func (r *reuse) Listen(network string, laddr *net.UDPAddr) (*reuseConn, error) {
 	var rconn *reuseConn
 	var localAddr *net.UDPAddr
 
-	// reuse the fallback connection if we've dialed out from this port already
+	// Check if we can reuse a connection we have already dialed out from.
+	// We reuse a connection from globalDialers when the requested port is 0 or the requested
+	// port is already in the globalDialers.
+	// If we are reusing a connection from globalDialers, we move the globalDialers entry to
+	// globalListeners
 	if laddr.IP.IsUnspecified() {
 		if laddr.Port == 0 {
-			// use any connection we have dialed out of
+			// the requested port is 0, we can reuse any connection
 			for _, conn := range r.globalDialers {
 				rconn = conn
 				localAddr = rconn.UDPConn.LocalAddr().(*net.UDPAddr)
+				// this entry will be added to the globalListeners map below
 				delete(r.globalDialers, localAddr.Port)
 				break
 			}
 		} else if _, ok := r.globalDialers[laddr.Port]; ok {
 			rconn = r.globalDialers[laddr.Port]
 			localAddr = rconn.UDPConn.LocalAddr().(*net.UDPAddr)
+			// this entry will be added to the globalListeners map below
 			delete(r.globalDialers, localAddr.Port)
 		}
 	}
