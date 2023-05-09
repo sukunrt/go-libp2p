@@ -76,9 +76,9 @@ type reuse struct {
 	unicast map[string] /* IP.String() */ map[int] /* port */ *reuseConn
 	// globalListeners contains connections that are listening on 0.0.0.0 / ::
 	globalListeners map[int]*reuseConn
-	// globalDialers contains connections that we've dialed out from. connections
-	// are reused from this map if no connection is available in the globalListeners
-	// map. These connections are listening on 0.0.0.0 / ::
+	// globalDialers contains connections that we've dialed out from. These connections are listening on 0.0.0.0 / ::
+	// On Dial, connections are reused from this map if no connection is available in the globalListeners
+	// On Listen, connections are reused from this map if the requested port is 0
 	globalDialers map[int]*reuseConn
 }
 
@@ -235,7 +235,15 @@ func (r *reuse) Listen(network string, laddr *net.UDPAddr) (*reuseConn, error) {
 
 	// reuse the fallback connection if we've dialed out from this port already
 	if laddr.IP.IsUnspecified() {
-		if _, ok := r.globalDialers[laddr.Port]; ok {
+		if laddr.Port == 0 {
+			// use any connection we have dialed out of
+			for _, conn := range r.globalDialers {
+				rconn = conn
+				localAddr = rconn.UDPConn.LocalAddr().(*net.UDPAddr)
+				delete(r.globalDialers, localAddr.Port)
+				break
+			}
+		} else if _, ok := r.globalDialers[laddr.Port]; ok {
 			rconn = r.globalDialers[laddr.Port]
 			localAddr = rconn.UDPConn.LocalAddr().(*net.UDPAddr)
 			delete(r.globalDialers, localAddr.Port)

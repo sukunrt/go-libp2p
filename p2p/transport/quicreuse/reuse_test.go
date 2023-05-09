@@ -137,11 +137,11 @@ func TestReuseConnectionWhenDialBeforeListen(t *testing.T) {
 	// dial any address
 	raddr, err := net.ResolveUDPAddr("udp4", "1.1.1.1:1234")
 	require.NoError(t, err)
-	_, err = reuse.Dial("udp4", raddr)
+	rconn, err := reuse.Dial("udp4", raddr)
 	require.NoError(t, err)
 
 	// open a listener
-	laddr := &net.UDPAddr{IP: net.IPv4zero, Port: 10000}
+	laddr := &net.UDPAddr{IP: net.IPv4zero, Port: 1234}
 	lconn, err := reuse.Listen("udp4", laddr)
 	require.NoError(t, err)
 
@@ -152,6 +152,13 @@ func TestReuseConnectionWhenDialBeforeListen(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, conn, lconn)
 	require.Equal(t, conn.GetCount(), 2)
+
+	// a listener on an unspecified port should reuse the dialer
+	laddr2 := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
+	lconn2, err := reuse.Listen("udp4", laddr2)
+	require.NoError(t, err)
+	require.Equal(t, lconn2, rconn)
+	require.Equal(t, lconn2.GetCount(), 2)
 }
 
 func TestReuseListenOnSpecificInterface(t *testing.T) {
@@ -210,7 +217,7 @@ func TestReuseGarbageCollect(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, dconn.GetCount(), 1)
 
-	addr, err := net.ResolveUDPAddr("udp4", "0.0.0.0:0")
+	addr, err := net.ResolveUDPAddr("udp4", "0.0.0.0:1234")
 	require.NoError(t, err)
 	lconn, err := reuse.Listen("udp4", addr)
 	require.NoError(t, err)
