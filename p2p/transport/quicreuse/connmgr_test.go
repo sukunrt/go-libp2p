@@ -25,7 +25,7 @@ func checkClosed(t *testing.T, cm *ConnManager) {
 			continue
 		}
 		r.mutex.Lock()
-		for _, conn := range r.global {
+		for _, conn := range r.globalListeners {
 			require.Zero(t, conn.GetCount())
 		}
 		for _, conns := range r.unicast {

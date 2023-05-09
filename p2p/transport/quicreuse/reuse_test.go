@@ -21,12 +21,12 @@ func (c *reuseConn) GetCount() int {
 
 func closeAllConns(reuse *reuse) {
 	reuse.mutex.Lock()
-	for _, conn := range reuse.global {
+	for _, conn := range reuse.globalListeners {
 		for conn.GetCount() > 0 {
 			conn.DecreaseCount()
 		}
 	}
-	for _, conn := range reuse.globalFallback {
+	for _, conn := range reuse.globalDialers {
 		for conn.GetCount() > 0 {
 			conn.DecreaseCount()
 		}
@@ -201,8 +201,14 @@ func TestReuseGarbageCollect(t *testing.T) {
 	numGlobals := func() int {
 		reuse.mutex.Lock()
 		defer reuse.mutex.Unlock()
-		return len(reuse.global)
+		return len(reuse.globalListeners) + len(reuse.globalDialers)
 	}
+
+	raddr, err := net.ResolveUDPAddr("udp4", "1.2.3.4:1234")
+	require.NoError(t, err)
+	dconn, err := reuse.Dial("udp4", raddr)
+	require.NoError(t, err)
+	require.Equal(t, dconn.GetCount(), 1)
 
 	addr, err := net.ResolveUDPAddr("udp4", "0.0.0.0:0")
 	require.NoError(t, err)
@@ -212,13 +218,14 @@ func TestReuseGarbageCollect(t *testing.T) {
 
 	closeTime := time.Now()
 	lconn.DecreaseCount()
+	dconn.DecreaseCount()
 
 	for {
 		num := numGlobals()
 		if closeTime.Add(maxUnusedDuration).Before(time.Now()) {
 			break
 		}
-		require.Equal(t, num, 1)
+		require.Equal(t, num, 2)
 		time.Sleep(2 * time.Millisecond)
 	}
 	require.Eventually(t, func() bool { return numGlobals() == 0 }, 4*garbageCollectInterval, 10*time.Millisecond)
