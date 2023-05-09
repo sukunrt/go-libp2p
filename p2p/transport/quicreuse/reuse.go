@@ -230,15 +230,15 @@ func (r *reuse) Listen(network string, laddr *net.UDPAddr) (*reuseConn, error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	var rconn *reuseConn
-	var localAddr *net.UDPAddr
-
 	// Check if we can reuse a connection we have already dialed out from.
 	// We reuse a connection from globalDialers when the requested port is 0 or the requested
 	// port is already in the globalDialers.
 	// If we are reusing a connection from globalDialers, we move the globalDialers entry to
 	// globalListeners
 	if laddr.IP.IsUnspecified() {
+		var rconn *reuseConn
+		var localAddr *net.UDPAddr
+
 		if laddr.Port == 0 {
 			// the requested port is 0, we can reuse any connection
 			for _, conn := range r.globalDialers {
@@ -264,8 +264,8 @@ func (r *reuse) Listen(network string, laddr *net.UDPAddr) (*reuseConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	localAddr = conn.LocalAddr().(*net.UDPAddr)
-	rconn = newReuseConn(conn)
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	rconn := newReuseConn(conn)
 
 	rconn.IncreaseCount()
 
