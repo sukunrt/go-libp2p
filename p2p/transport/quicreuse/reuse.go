@@ -244,25 +244,28 @@ func (r *reuse) Listen(network string, laddr *net.UDPAddr) (*reuseConn, error) {
 			for _, conn := range r.globalDialers {
 				rconn = conn
 				localAddr = rconn.UDPConn.LocalAddr().(*net.UDPAddr)
-				// this entry will be added to the globalListeners map below
 				delete(r.globalDialers, localAddr.Port)
 				break
 			}
 		} else if _, ok := r.globalDialers[laddr.Port]; ok {
 			rconn = r.globalDialers[laddr.Port]
 			localAddr = rconn.UDPConn.LocalAddr().(*net.UDPAddr)
-			// this entry will be added to the globalListeners map below
 			delete(r.globalDialers, localAddr.Port)
 		}
-	}
-	if rconn == nil {
-		conn, err := net.ListenUDP(network, laddr)
-		if err != nil {
-			return nil, err
+		// found a match
+		if rconn != nil {
+			rconn.IncreaseCount()
+			r.globalListeners[localAddr.Port] = rconn
+			return rconn, nil
 		}
-		localAddr = conn.LocalAddr().(*net.UDPAddr)
-		rconn = newReuseConn(conn)
 	}
+
+	conn, err := net.ListenUDP(network, laddr)
+	if err != nil {
+		return nil, err
+	}
+	localAddr = conn.LocalAddr().(*net.UDPAddr)
+	rconn = newReuseConn(conn)
 
 	rconn.IncreaseCount()
 
