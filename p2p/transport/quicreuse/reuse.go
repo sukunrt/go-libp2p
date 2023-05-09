@@ -78,7 +78,7 @@ type reuse struct {
 	globalListeners map[int]*reuseConn
 	// globalDialers contains connections that we've dialed out from. These connections are listening on 0.0.0.0 / ::
 	// On Dial, connections are reused from this map if no connection is available in the globalListeners
-	// On Listen, connections are reused from this map if the requested port is 0
+	// On Listen, connections are reused from this map if the requested port is 0, and then moved to globalListeners
 	globalDialers map[int]*reuseConn
 }
 
