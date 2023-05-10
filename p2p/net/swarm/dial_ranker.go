@@ -121,7 +121,8 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 	}
 
 	// Filter addresses we are sure we don't want to dial
-	selectedAddrs := make([]ma.Multiaddr, 0, len(addrs))
+	selectedAddrs := addrs
+	i := 0
 	for _, a := range addrs {
 		switch {
 		// If a quicDraft29 or webtransport address is reachable, quic-v1 will also be reachable. So we
@@ -138,9 +139,10 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 				continue
 			}
 		}
-		selectedAddrs = append(selectedAddrs, a)
+		selectedAddrs[i] = a
+		i++
 	}
-
+	selectedAddrs = selectedAddrs[:i]
 	sort.Slice(selectedAddrs, func(i, j int) bool { return score(selectedAddrs[i]) < score(selectedAddrs[j]) })
 
 	res := make([]network.AddrDelay, 0, len(addrs))
@@ -149,8 +151,9 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 		delay := offset
 		switch {
 		case isProtocolAddr(a, ma.P_QUIC) || isProtocolAddr(a, ma.P_QUIC_V1):
+			// For quic addresses we dial a single address first and then wait for quicDelay
+			// After quicDelay we dial rest of the quic addresses
 			if quicCount > 0 {
-				// All but the first quic dial are delayed by quicDelay
 				delay += quicDelay
 			}
 			quicCount++
@@ -170,6 +173,8 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 func score(a ma.Multiaddr) int {
 	// the lower 16 bits of the result are the relavant port
 	// the higher bits rank the protocol
+	// low ports are ranked higher because they're more likely to
+	// be listen addresses
 	if _, err := a.ValueForProtocol(ma.P_WEBTRANSPORT); err == nil {
 		p, _ := a.ValueForProtocol(ma.P_UDP)
 		pi, _ := strconv.Atoi(p) // cannot error
@@ -193,7 +198,8 @@ func score(a ma.Multiaddr) int {
 	return (1 << 30)
 }
 
-// addrPort returns netip.AddrPort for a. Ignoring errors because the caller should have checked for those
+// addrPort returns the ip and port for a. p should be either ma.P_TCP or ma.P_UDP.
+// a must be an (ip, tcp) or (ip, udp) address.
 func addrPort(a ma.Multiaddr, p int) netip.AddrPort {
 	ip, _ := manet.ToIP(a)
 	port, _ := a.ValueForProtocol(p)

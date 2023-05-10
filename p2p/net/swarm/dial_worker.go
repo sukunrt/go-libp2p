@@ -17,20 +17,38 @@ import (
 // TODO explain how all this works
 // ////////////////////////////////////////////////////////////////////////////////
 
+// dialRequest is structure used to request dials to the peer associated with a
+// worker loop
 type dialRequest struct {
-	ctx   context.Context
+	// ctx is the context that may be used for the request
+	// if another concurrent request is made, any of the concurrent request's ctx may be used for
+	// dials to the peer's addresses
+	// ctx for simultaneous connect requests have higher priority than normal requests
+	ctx context.Context
+	// resch is the channel used to send the response for this query
 	resch chan dialResponse
 }
 
+// dialResponse is the response sent to dialRequests on the request's resch channel
 type dialResponse struct {
+	// conn is the connection to the peer on success
 	conn *Conn
-	err  error
+	// err is the error in dialing the peer
+	// nil on connection success
+	err error
 }
 
+// pendRequest is used to track progress on a dialRequest.
 type pendRequest struct {
-	req   dialRequest               // the original request
-	err   *DialError                // dial error accumulator
-	addrs map[ma.Multiaddr]struct{} // pending addr dials
+	// req is the original dialRequest
+	req dialRequest
+	// err comprises errors of all failed dials
+	err *DialError
+	// addrs are the addresses on which we are waiting for pending dials
+	// At the time of creation addrs is initialised to all the addresses of the peer. On a failed dial,
+	// the addr is removed from the map and err is updated. On a successful dial, the dialRequest is
+	// completed and response is sent with the connection
+	addrs map[ma.Multiaddr]struct{}
 }
 
 // addrDial tracks dials to a particular multiaddress.
@@ -43,20 +61,31 @@ type addrDial struct {
 	conn *Conn
 	// err is the err on dialing the address
 	err error
-	// requests is the list of dialRequests interested in this dial
+	// requests is the list of pendRequests interested in this dial
+	// the value in the slice is the request number assigned to this request by the dialWorker
 	requests []int
 	// dialed indicates whether we have triggered the dial to the address
 	dialed bool
 }
 
+// dialWorker synchronises concurrent dials to a peer. It ensures that we make at most one dial to a
+// peer's address
 type dialWorker struct {
-	s        *Swarm
-	peer     peer.ID
-	reqch    <-chan dialRequest
-	reqno    int
-	requests map[int]*pendRequest
-	pending  map[ma.Multiaddr]*addrDial
-	resch    chan dialResult
+	s    *Swarm
+	peer peer.ID
+	// reqch is used to send dial requests to the worker. close reqch to end the worker loop
+	reqch <-chan dialRequest
+	// reqno is the request number used to track different dialRequests for a peer.
+	// Each incoming request is assigned a reqno. This reqno is used in pendingRequests and in
+	// addrDial objects in trackedDials to track this request
+	reqno int
+	// pendingRequests maps reqno to the pendRequest object for a dialRequest
+	pendingRequests map[int]*pendRequest
+	// trackedDials tracks dials to the peers addresses. An entry here is used to ensure that
+	// we dial an address at most once
+	trackedDials map[ma.Multiaddr]*addrDial
+	// resch is used to receive response for dials to the peers addresses.
+	resch chan dialResult
 
 	connected bool // true when a connection has been successfully established
 
@@ -70,16 +99,18 @@ func newDialWorker(s *Swarm, p peer.ID, reqch <-chan dialRequest, cl Clock) *dia
 		cl = RealClock{}
 	}
 	return &dialWorker{
-		s:        s,
-		peer:     p,
-		reqch:    reqch,
-		requests: make(map[int]*pendRequest),
-		pending:  make(map[ma.Multiaddr]*addrDial),
-		resch:    make(chan dialResult),
-		cl:       cl,
+		s:               s,
+		peer:            p,
+		reqch:           reqch,
+		pendingRequests: make(map[int]*pendRequest),
+		trackedDials:    make(map[ma.Multiaddr]*addrDial),
+		resch:           make(chan dialResult),
+		cl:              cl,
 	}
 }
 
+// loop implements the core dial worker loop. Requests are received on w.reqch.
+// The loop exits when w.reqch is closed.
 func (w *dialWorker) loop() {
 	w.wg.Add(1)
 	defer w.wg.Done()
@@ -87,35 +118,48 @@ func (w *dialWorker) loop() {
 
 	// dq is used to pace dials to different addresses of the peer
 	dq := newDialQueue()
-	// currDials is the number of dials in flight
-	currDials := 0
-	st := w.cl.Now()
-	// timer is the timer used to trigger dials
-	timer := w.cl.InstantTimer(st.Add(math.MaxInt64))
+	// dialsInFlight is the number of dials in flight.
+	dialsInFlight := 0
+
+	startTime := w.cl.Now()
+	// dialTimer is the dialTimer used to trigger dials
+	dialTimer := w.cl.InstantTimer(startTime.Add(math.MaxInt64))
 	timerRunning := true
 	// scheduleNextDial updates timer for triggering the next dial
 	scheduleNextDial := func() {
-		if timerRunning && !timer.Stop() {
-			<-timer.Ch()
+		if timerRunning && !dialTimer.Stop() {
+			<-dialTimer.Ch()
 		}
 		timerRunning = false
 		if dq.len() > 0 {
-			// if there are no dials in flight, trigger the next dials immediately
-			if currDials == 0 {
-				timer.Reset(st)
+			if dialsInFlight == 0 {
+				// if there are no dials in flight, trigger the next dials immediately
+				dialTimer.Reset(startTime)
 			} else {
-				timer.Reset(st.Add(dq.top().Delay))
+				dialTimer.Reset(startTime.Add(dq.top().Delay))
 			}
 			timerRunning = true
 		}
 	}
 loop:
 	for {
+		// The loop has three parts
+		//  1. Input requests are received on w.reqch. If a suitable connection is not available we create
+		//     a pendRequest object to track the dialRequest and add the addresses to dq.
+		//  2. Addresses from the dialQueue are dialed at approprite time intervals depending on delay logic.
+		//     We are notified of the completion of these dials on w.resch.
+		//  3. Responses for dials are received on w.resch. On receiving a response, we updated the pendRequests
+		//     interested in dials on this address.
+
 		select {
 		case req, ok := <-w.reqch:
 			if !ok {
 				return
 			}
+			// We have received a new request. If we do not have a suitable connection,
+			// track this dialRequest with a pendRequest
+			// enqueue the peers addresses relevant to this request in dq
+			// track dials to the addresses relevant to this request
 
 			c, err := w.s.bestAcceptableConnToPeer(req.ctx, w.peer)
 			if c != nil || err != nil {
@@ -129,10 +173,7 @@ loop:
 				continue loop
 			}
 
-			// at this point, len(addrs) > 0 or else it would be error from addrsForDial
-			// ranke them to process in order
-			// at this point, len(addrs) > 0 or else it would be error from addrsForDial
-			// ranke them to process in order
+			// get the delays to dial these addrs from the swarms dialRanker
 			simConnect, _, _ := network.GetSimultaneousConnect(req.ctx)
 			addrRanking := w.rankAddrs(addrs, simConnect)
 			addrDelay := make(map[ma.Multiaddr]time.Duration)
@@ -148,13 +189,16 @@ loop:
 				addrDelay[adelay.Addr] = adelay.Delay
 			}
 
-			// check if any of the addrs has been successfully dialed and accumulate
-			// errors from complete dials while collecting new addrs to dial/join
+			// Check if dials to any of the addrs have completed already
+			// If they have errored, record the error in pr. If they have succeeded,
+			// respond with the connection.
+			// If they are pending, add them to tojoin.
+			// If we haven't seen any of the addresses before, add them to todial.
 			var todial []ma.Multiaddr
 			var tojoin []*addrDial
 
 			for _, adelay := range addrRanking {
-				ad, ok := w.pending[adelay.Addr]
+				ad, ok := w.trackedDials[adelay.Addr]
 				if !ok {
 					todial = append(todial, adelay.Addr)
 					continue
@@ -183,53 +227,69 @@ loop:
 				continue loop
 			}
 
-			// the request has some pending or new dials, track it and schedule new dials
+			// The request has some pending or new dials. We assign this request a request number.
+			// This value of w.reqno is used to track this request in all the structures
 			w.reqno++
-			w.requests[w.reqno] = pr
+			w.pendingRequests[w.reqno] = pr
 
 			for _, ad := range tojoin {
 				if !ad.dialed {
+					// we haven't dialed this address. update the ad.ctx to have simultaneous connect values
+					// set correctly
 					if simConnect, isClient, reason := network.GetSimultaneousConnect(req.ctx); simConnect {
 						if simConnect, _, _ := network.GetSimultaneousConnect(ad.ctx); !simConnect {
 							ad.ctx = network.WithSimultaneousConnect(ad.ctx, isClient, reason)
+							// update the element in dq to use the simultaneous connect delay.
 							dq.Add(network.AddrDelay{Addr: ad.addr, Delay: addrDelay[ad.addr]})
 						}
 					}
 				}
+				// add the request to the addrDial
 				ad.requests = append(ad.requests, w.reqno)
 			}
 
 			if len(todial) > 0 {
+				// these are new addresses, track them and add them to dq
 				for _, a := range todial {
-					w.pending[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
+					w.trackedDials[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
 					dq.Add(network.AddrDelay{Addr: a, Delay: addrDelay[a]})
 				}
 			}
+			// setup dialTimer for updates to dq
 			scheduleNextDial()
 
-		case <-timer.Ch():
-			// we dont check the delay here because an early trigger means all in flight
-			// dials have completed
+		case <-dialTimer.Ch():
+			// It is time to dial the most urgent addresses.
+			// We dont check the delay here because an early trigger means all in flight
+			// dials have completed.
 			for _, adelay := range dq.NextBatch() {
 				// spawn the dial
-				ad := w.pending[adelay.Addr]
+				ad := w.trackedDials[adelay.Addr]
 				ad.dialed = true
 				err := w.s.dialNextAddr(ad.ctx, w.peer, ad.addr, w.resch)
 				if err != nil {
+					// the actual dial happens in a different go routine. An err here
+					// only happens in case of backoff. handle that.
 					w.dispatchError(ad, err)
 				} else {
-					currDials++
+					// the dial was successful. update inflight dials
+					dialsInFlight++
 				}
 			}
 			timerRunning = false
+			// schedule more dials
 			scheduleNextDial()
 
 		case res := <-w.resch:
+			// A dial to an address has completed.
+			// Update all requests waiting on this address. On success, complete the request.
+			// On error, record the error
+
+			dialsInFlight--
 			if res.Conn != nil {
 				w.connected = true
 			}
-			currDials--
-			ad := w.pending[res.Addr]
+			ad := w.trackedDials[res.Addr]
 
 			if res.Conn != nil {
 				// we got a connection, add it to the swarm
@@ -241,16 +301,15 @@ loop:
 					continue loop
 				}
 
-				// dispatch to still pending requests
+				// request succeeded, respond to all pending requests
 				for _, reqno := range ad.requests {
-					pr, ok := w.requests[reqno]
+					pr, ok := w.pendingRequests[reqno]
 					if !ok {
-						// it has already dispatched a connection
+						// some other dial for this request succeeded before this one
 						continue
 					}
-
 					pr.req.resch <- dialResponse{conn: conn}
-					delete(w.requests, reqno)
+					delete(w.pendingRequests, reqno)
 				}
 
 				ad.conn = conn
@@ -266,7 +325,9 @@ loop:
 				w.s.backf.AddBackoff(w.peer, res.Addr)
 			}
 			w.dispatchError(ad, res.Err)
-			// only schedule next dial on error
+			// Only schedule next dial on error.
+			// If we scheduleNextDial on success, we will end up making one dial more than
+			// required because the final successful dial will spawn one more dial
 			scheduleNextDial()
 		}
 	}
@@ -276,9 +337,9 @@ loop:
 func (w *dialWorker) dispatchError(ad *addrDial, err error) {
 	ad.err = err
 	for _, reqno := range ad.requests {
-		pr, ok := w.requests[reqno]
+		pr, ok := w.pendingRequests[reqno]
 		if !ok {
-			// has already been dispatched
+			// some other dial for this request succeeded before this one
 			continue
 		}
 
@@ -296,7 +357,7 @@ func (w *dialWorker) dispatchError(ad *addrDial, err error) {
 			} else {
 				pr.req.resch <- dialResponse{err: pr.err}
 			}
-			delete(w.requests, reqno)
+			delete(w.pendingRequests, reqno)
 		}
 	}
 
@@ -307,7 +368,7 @@ func (w *dialWorker) dispatchError(ad *addrDial, err error) {
 	// another dial is in progress, and needs to do a direct connection without inhibitions from
 	// dial backoff.
 	if err == ErrDialBackoff {
-		delete(w.pending, ad.addr)
+		delete(w.trackedDials, ad.addr)
 	}
 }
 
@@ -340,19 +401,20 @@ func (dq *dialQueue) Add(adelay network.AddrDelay) {
 				// existing element is the same. nothing to do
 				return
 			}
-			dq.remove(i)
+			// remove the element
+			copy(dq.q[i:], dq.q[i+1:])
+			dq.q = dq.q[:len(dq.q)-1]
 			break
 		}
 	}
-	// i is the position in sorted order of the new element
-	var i int
-	for i = 0; i < dq.len(); i++ {
+
+	for i := 0; i < dq.len(); i++ {
 		if dq.q[i].Delay > adelay.Delay {
-			break
+			dq.q = append(dq.q, adelay) // extend the slice
+			copy(dq.q[i+1:], dq.q[i:])
+			dq.q[i] = adelay
+			return
 		}
-	}
-	for ; i < dq.len(); i++ {
-		dq.q[i], adelay = adelay, dq.q[i]
 	}
 	dq.q = append(dq.q, adelay)
 }
@@ -373,13 +435,6 @@ func (dq *dialQueue) NextBatch() []network.AddrDelay {
 	}
 	dq.q = dq.q[i:]
 	return res
-}
-
-func (dq *dialQueue) remove(i int) {
-	for j := i + 1; j < dq.len(); j++ {
-		dq.q[j-1] = dq.q[j]
-	}
-	dq.q = dq.q[:len(dq.q)-1]
 }
 
 // len is the length of the queue. Calling top on an empty queue panics.
