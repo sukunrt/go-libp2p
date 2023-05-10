@@ -832,9 +832,9 @@ func TestDialQueuePriority(t *testing.T) {
 		{
 			name: "priority queue property",
 			input: []network.AddrDelay{
-				{Addr: addrs[0], Delay: 100},
-				{Addr: addrs[1], Delay: 200},
-				{Addr: addrs[2], Delay: 20},
+				{Addr: addrs[0], Delay: 10},
+				{Addr: addrs[1], Delay: 20},
+				{Addr: addrs[2], Delay: 2},
 			},
 			output: []ma.Multiaddr{
 				addrs[2], addrs[0], addrs[1],
@@ -881,7 +881,7 @@ func TestDialQueuePriority(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			q := newDialQueue()
 			for i := 0; i < len(tc.input); i++ {
-				q.add(tc.input[i])
+				q.Add(tc.input[i])
 			}
 			for i := 0; i < len(tc.output); i++ {
 				v := q.pop()
@@ -966,10 +966,10 @@ func TestDialQueueNextBatch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			q := newDialQueue()
 			for i := 0; i < len(tc.input); i++ {
-				q.add(tc.input[i])
+				q.Add(tc.input[i])
 			}
 			for _, batch := range tc.output {
-				b := q.nextBatch()
+				b := q.NextBatch()
 				if len(batch) != len(b) {
 					t.Errorf("expected %d elements got %d", len(batch), len(b))
 				}
@@ -990,28 +990,27 @@ func TestDialQueueNextBatch(t *testing.T) {
 
 func BenchmarkDialQueue(b *testing.B) {
 	b.ReportAllocs()
-	genInput := func(size int) []network.AddrDelay {
-		res := make([]network.AddrDelay, size)
-		for j := 0; j < size; j++ {
-			res[j] = network.AddrDelay{
-				Addr:  ma.StringCast(fmt.Sprintf("/ip4/1.2.3.4/udp/%d/quic-v1", j+100)),
-				Delay: time.Duration(mrand.Intn(1000_000_000)),
-			}
+	randInput := func() network.AddrDelay {
+		p := mrand.Intn(60000)
+		ip := mrand.Intn(200)
+		return network.AddrDelay{
+			Addr:  ma.StringCast(fmt.Sprintf("/ip4/1.2.3.%d/udp/%d/quic-v1", ip, p)),
+			Delay: time.Duration(mrand.Intn(1000_000_000)),
 		}
-		return res
 	}
-	for i := 100; i <= 10000; i *= 10 {
-		b.Run(fmt.Sprintf("size %d", i), func(b *testing.B) {
-			initInp := genInput(i)
+	inputs := make([]network.AddrDelay, 10000)
+	for i := 0; i < len(inputs); i++ {
+		inputs[i] = randInput()
+	}
+	for t := 10; t <= 100; t += 10 {
+		b.Run(fmt.Sprintf("size %d", t), func(b *testing.B) {
 			dq := newDialQueue()
-			for _, x := range initInp {
-				dq.add(x)
+			for i := 0; i < t; i++ {
+				dq.Add(randInput())
 			}
-			inp := genInput(1000)
 			for j := 0; j < b.N; j++ {
-				x := inp[mrand.Intn(len(inp))]
+				dq.Add(inputs[mrand.Intn(len(inputs))])
 				dq.pop()
-				dq.add(x)
 			}
 		})
 	}

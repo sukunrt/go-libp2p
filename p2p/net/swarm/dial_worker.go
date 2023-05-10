@@ -192,7 +192,7 @@ loop:
 					if simConnect, isClient, reason := network.GetSimultaneousConnect(req.ctx); simConnect {
 						if simConnect, _, _ := network.GetSimultaneousConnect(ad.ctx); !simConnect {
 							ad.ctx = network.WithSimultaneousConnect(ad.ctx, isClient, reason)
-							dq.add(network.AddrDelay{Addr: ad.addr, Delay: addrDelay[ad.addr]})
+							dq.Add(network.AddrDelay{Addr: ad.addr, Delay: addrDelay[ad.addr]})
 						}
 					}
 				}
@@ -202,7 +202,7 @@ loop:
 			if len(todial) > 0 {
 				for _, a := range todial {
 					w.pending[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
-					dq.add(network.AddrDelay{Addr: a, Delay: addrDelay[a]})
+					dq.Add(network.AddrDelay{Addr: a, Delay: addrDelay[a]})
 				}
 			}
 			scheduleNextDial()
@@ -210,7 +210,7 @@ loop:
 		case <-timer.Ch():
 			// we dont check the delay here because an early trigger means all in flight
 			// dials have completed
-			for _, adelay := range dq.nextBatch() {
+			for _, adelay := range dq.NextBatch() {
 				// spawn the dial
 				ad := w.pending[adelay.Addr]
 				ad.dialed = true
@@ -324,29 +324,62 @@ func (w *dialWorker) rankAddrs(addrs []ma.Multiaddr, isSimConnect bool) []networ
 type dialQueue struct {
 	// q is the queue maintained as a heap
 	q []network.AddrDelay
-	// pos is the reverse map from address to its position in q
-	// the reverse map is required to provide efficient updates
-	pos map[ma.Multiaddr]int
 }
 
+// newDialQueue returns a new dialQueue
 func newDialQueue() *dialQueue {
-	return &dialQueue{pos: make(map[ma.Multiaddr]int)}
+	return &dialQueue{}
 }
 
-// add adds adelay to the queue. if another elements exists in the queue with
+// Add adds adelay to the queue. if another elements exists in the queue with
 // the same address, it replaces that element.
-func (dq *dialQueue) add(adelay network.AddrDelay) {
-	dq.remove(adelay.Addr)
+func (dq *dialQueue) Add(adelay network.AddrDelay) {
+	for i := 0; i < dq.len(); i++ {
+		if dq.q[i].Addr.Equal(adelay.Addr) {
+			if dq.q[i].Delay == adelay.Delay {
+				// existing element is the same. nothing to do
+				return
+			}
+			dq.remove(i)
+			break
+		}
+	}
+	// i is the position in sorted order of the new element
+	var i int
+	for i = 0; i < dq.len(); i++ {
+		if dq.q[i].Delay > adelay.Delay {
+			break
+		}
+	}
+	for ; i < dq.len(); i++ {
+		dq.q[i], adelay = adelay, dq.q[i]
+	}
 	dq.q = append(dq.q, adelay)
-	dq.pos[adelay.Addr] = len(dq.q) - 1
-	dq.heapify(len(dq.q) - 1)
 }
 
-// swap swaps elements at i and j maintaining the reverse map pos.
-func (dq *dialQueue) swap(i, j int) {
-	dq.pos[dq.q[i].Addr] = j
-	dq.pos[dq.q[j].Addr] = i
-	dq.q[i], dq.q[j] = dq.q[j], dq.q[i]
+// NextBatch returns all the elements in the queue with the highest priority
+func (dq *dialQueue) NextBatch() []network.AddrDelay {
+	if dq.len() == 0 {
+		return nil
+	}
+	res := make([]network.AddrDelay, 0)
+	top := dq.top()
+	var i int
+	for i = 0; i < len(dq.q); i++ {
+		if dq.q[i].Delay != top.Delay {
+			break
+		}
+		res = append(res, dq.q[i])
+	}
+	dq.q = dq.q[i:]
+	return res
+}
+
+func (dq *dialQueue) remove(i int) {
+	for j := i + 1; j < dq.len(); j++ {
+		dq.q[j-1] = dq.q[j]
+	}
+	dq.q = dq.q[:len(dq.q)-1]
 }
 
 // len is the length of the queue. Calling top on an empty queue panics.
@@ -359,98 +392,10 @@ func (dq *dialQueue) top() network.AddrDelay {
 	return dq.q[0]
 }
 
-// pop removes the top element from the queue and returns it
+// pop removes the top element of the queue. This is useful for testing the
+// priority queue property
 func (dq *dialQueue) pop() network.AddrDelay {
 	v := dq.q[0]
-	dq.remove(v.Addr)
+	dq.q = dq.q[1:]
 	return v
-}
-
-// remove removes the element in the queue with address a
-func (dq *dialQueue) remove(a ma.Multiaddr) {
-	pos, ok := dq.pos[a]
-	if !ok {
-		return
-	}
-	dq.swap(pos, len(dq.q)-1)
-	dq.q = dq.q[:len(dq.q)-1]
-	delete(dq.pos, a)
-	if pos < len(dq.q) {
-		dq.heapify(pos)
-	}
-}
-
-// heapify fixes the heap property for element at position i
-func (dq *dialQueue) heapify(i int) {
-	if dq.len() == 0 {
-		return
-	}
-	dq.fixdown(i)
-	dq.fixup(i)
-}
-
-func (dq *dialQueue) fixup(i int) {
-	if dq.len() == 0 || i == 0 {
-		return
-	}
-	for i != 0 {
-		p := (i - 1) / 2
-		if dq.q[i].Delay < dq.q[p].Delay {
-			dq.swap(i, p)
-			i = p
-			continue
-		}
-		break
-	}
-}
-
-func (dq *dialQueue) fixdown(i int) {
-	if i >= dq.len() {
-		return
-	}
-	for {
-		l, r := 2*i+1, 2*i+2
-		if l >= dq.len() {
-			break
-		}
-		if r >= dq.len() {
-			if dq.q[i].Delay > dq.q[l].Delay {
-				dq.swap(i, l)
-				i = l
-				continue
-			}
-			break
-		}
-		v, lv, rv := dq.q[i].Delay, dq.q[l].Delay, dq.q[r].Delay
-		if lv < v && lv <= rv {
-			dq.swap(i, l)
-			i = l
-			continue
-		}
-		if rv < v && rv <= lv {
-			dq.swap(i, r)
-			i = r
-			continue
-		}
-		break
-	}
-}
-
-// nextBatch returns all the elements in the queue with delay equal to the top element
-// of the queue
-func (dq *dialQueue) nextBatch() []network.AddrDelay {
-	if dq.len() == 0 {
-		return nil
-	}
-	res := make([]network.AddrDelay, 0)
-	top := dq.top()
-	for len(dq.q) > 0 {
-		v := dq.pop()
-		if v.Delay != top.Delay {
-			dq.add(v)
-			break
-		}
-		res = append(res, v)
-	}
-	return res
 }

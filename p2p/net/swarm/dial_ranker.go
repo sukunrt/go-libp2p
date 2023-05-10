@@ -174,7 +174,7 @@ func score(a ma.Multiaddr) int {
 		pi, _ := strconv.Atoi(p) // cannot error
 		return pi + (1 << 19)
 	}
-	return (1 << 31)
+	return (1 << 30)
 }
 
 func addrPort(a ma.Multiaddr, p int) string {
