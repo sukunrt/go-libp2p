@@ -1,6 +1,7 @@
 package swarm
 
 import (
+	"net/netip"
 	"sort"
 	"strconv"
 	"time"
@@ -38,11 +39,16 @@ func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 // We rank private, public ip4, public ip6, relay addresses separately.
 // In each group we apply the following logic:
 //
-// First we filter the addresses we don't want to dial
+// First we filter the addresses we don't want to dial. We are filtering these addresses because we
+// have an address that we prefer more than that address and which has the same reachability
 //
 //	If a quic-v1 address is present we don't dial quic or webtransport address on the same (ip,port)
-//	combination.
+//	combination. If a quicDraft29 or webtransport address is reachable, quic-v1 will definitely be
+//	reachable. quicDraft29 is deprecated in favour of quic-v1 and quic-v1 is more performant than
+//	webtransport
+//
 //	If a tcp address is present we don't dial ws or wss address on the same (ip, port) combination.
+//	If a ws address is reachable, tcp will definitely be reachable and it'll be more performant
 //
 // Then we rank the addresses:
 //
@@ -97,9 +103,12 @@ func defaultDialRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 // explained in defaultDialRanker.
 // offset is used to delay all addresses by a fixed duration. This is useful for delaying all relay
 // addresses relative to direct addresses
-func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.Duration, offset time.Duration) []network.AddrDelay {
-	quicV1Addr := make(map[string]struct{})
-	tcpAddr := make(map[string]struct{})
+func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.Duration,
+	offset time.Duration) []network.AddrDelay {
+
+	// First make a map of quicV1 and tcp AddrPorts.
+	quicV1Addr := make(map[netip.AddrPort]struct{})
+	tcpAddr := make(map[netip.AddrPort]struct{})
 	for _, a := range addrs {
 		switch {
 		case isProtocolAddr(a, ma.P_WEBTRANSPORT):
@@ -111,14 +120,19 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 		}
 	}
 
-	// first we filter addresses we are sure we don't want to dial
+	// Filter addresses we are sure we don't want to dial
 	selectedAddrs := make([]ma.Multiaddr, 0, len(addrs))
 	for _, a := range addrs {
 		switch {
+		// If a quicDraft29 or webtransport address is reachable, quic-v1 will also be reachable. So we
+		// drop the quicDraft29 or webtransport address
+		// We prefer quic-v1 over the older quic-draft29 address.
+		// We prefer quic-v1 over webtransport as it is more performant.
 		case isProtocolAddr(a, ma.P_WEBTRANSPORT) || isProtocolAddr(a, ma.P_QUIC):
 			if _, ok := quicV1Addr[addrPort(a, ma.P_UDP)]; ok {
 				continue
 			}
+		// If a ws address is reachable, tcp will also be reachable and it'll be more performant
 		case isProtocolAddr(a, ma.P_WS) || isProtocolAddr(a, ma.P_WSS):
 			if _, ok := tcpAddr[addrPort(a, ma.P_TCP)]; ok {
 				continue
@@ -128,6 +142,7 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 	}
 
 	sort.Slice(selectedAddrs, func(i, j int) bool { return score(selectedAddrs[i]) < score(selectedAddrs[j]) })
+
 	res := make([]network.AddrDelay, 0, len(addrs))
 	quicCount := 0
 	for _, a := range selectedAddrs {
@@ -135,12 +150,13 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 		switch {
 		case isProtocolAddr(a, ma.P_QUIC) || isProtocolAddr(a, ma.P_QUIC_V1):
 			if quicCount > 0 {
+				// All but the first quic dial are delayed by quicDelay
 				delay += quicDelay
 			}
 			quicCount++
 		case isProtocolAddr(a, ma.P_TCP):
 			if quicCount >= 2 {
-				delay += quicDelay + tcpDelay
+				delay += 2 * quicDelay
 			} else if quicCount == 1 {
 				delay += tcpDelay
 			}
@@ -177,10 +193,13 @@ func score(a ma.Multiaddr) int {
 	return (1 << 30)
 }
 
-func addrPort(a ma.Multiaddr, p int) string {
-	c, _ := ma.SplitFirst(a)
+// addrPort returns netip.AddrPort for a. Ignoring errors because the caller should have checked for those
+func addrPort(a ma.Multiaddr, p int) netip.AddrPort {
+	ip, _ := manet.ToIP(a)
 	port, _ := a.ValueForProtocol(p)
-	return c.Value() + ":" + port
+	pi, _ := strconv.Atoi(port)
+	addr, _ := netip.AddrFromSlice(ip)
+	return netip.AddrPortFrom(addr, uint16(pi))
 }
 
 func isProtocolAddr(a ma.Multiaddr, p int) bool {
