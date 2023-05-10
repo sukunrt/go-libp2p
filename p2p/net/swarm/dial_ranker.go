@@ -128,7 +128,6 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 	}
 
 	sort.Slice(selectedAddrs, func(i, j int) bool { return score(selectedAddrs[i]) < score(selectedAddrs[j]) })
-	log.Errorf("sorting %s", selectedAddrs)
 	res := make([]network.AddrDelay, 0, len(addrs))
 	quicCount := 0
 	for _, a := range selectedAddrs {
