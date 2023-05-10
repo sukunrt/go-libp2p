@@ -71,7 +71,7 @@ func TestDelayRankerQUICDelay(t *testing.T) {
 			},
 		},
 		{
-			name:  "quic+webtrans filtered when quicv1",
+			name:  "quic+webtransport filtered when quicv1",
 			addrs: []ma.Multiaddr{q1, q2, q3, q4, q1v1, q2v1, q3v1, wt1},
 			output: []network.AddrDelay{
 				{Addr: q1v1, Delay: 0},
@@ -127,7 +127,7 @@ func TestDelayRankerQUICDelay(t *testing.T) {
 func TestDelayRankerTCPDelay(t *testing.T) {
 
 	q1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic")
-	q2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic")
+	q2v1 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic-v1")
 
 	t1 := ma.StringCast("/ip4/1.2.3.5/tcp/1/")
 	t2 := ma.StringCast("/ip4/1.2.3.4/tcp/2")
@@ -139,10 +139,10 @@ func TestDelayRankerTCPDelay(t *testing.T) {
 	}{
 		{
 			name:  "2 quic with tcp",
-			addrs: []ma.Multiaddr{q1, q2, t1, t2},
+			addrs: []ma.Multiaddr{q1, q2v1, t1, t2},
 			output: []network.AddrDelay{
-				{Addr: q1, Delay: 0},
-				{Addr: q2, Delay: publicQUICDelay},
+				{Addr: q2v1, Delay: 0},
+				{Addr: q1, Delay: publicQUICDelay},
 				{Addr: t1, Delay: publicQUICDelay + publicTCPDelay},
 				{Addr: t2, Delay: publicQUICDelay + publicTCPDelay},
 			},

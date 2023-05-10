@@ -395,6 +395,184 @@ func TestDialWorkerLoopConcurrentFailureStress(t *testing.T) {
 	worker.wg.Wait()
 }
 
+func TestDialQueuePriority(t *testing.T) {
+	addrs := make([]ma.Multiaddr, 0)
+	ports := make(map[int]struct{})
+	for i := 0; i < 10; i++ {
+		for {
+			p := 1 + mrand.Intn(10000)
+			if _, ok := ports[p]; ok {
+				continue
+			}
+			ports[p] = struct{}{}
+			addrs = append(addrs, ma.StringCast(fmt.Sprintf("/ip4/1.2.3.4/tcp/%d", p)))
+			break
+		}
+	}
+	testcase := []struct {
+		name   string
+		input  []network.AddrDelay
+		output []ma.Multiaddr
+	}{
+		{
+			name: "priority queue property",
+			input: []network.AddrDelay{
+				{Addr: addrs[0], Delay: 10},
+				{Addr: addrs[1], Delay: 20},
+				{Addr: addrs[2], Delay: 2},
+			},
+			output: []ma.Multiaddr{
+				addrs[2], addrs[0], addrs[1],
+			},
+		},
+		{
+			name: "priority queue property 2",
+			input: []network.AddrDelay{
+				{Addr: addrs[0], Delay: 8},
+				{Addr: addrs[1], Delay: 9},
+				{Addr: addrs[2], Delay: 6},
+				{Addr: addrs[3], Delay: 7},
+				{Addr: addrs[4], Delay: 4},
+				{Addr: addrs[5], Delay: 5},
+				{Addr: addrs[6], Delay: 2},
+				{Addr: addrs[7], Delay: 3},
+				{Addr: addrs[8], Delay: 1},
+			},
+			output: []ma.Multiaddr{
+				addrs[8], addrs[6], addrs[7], addrs[4], addrs[5], addrs[2], addrs[3], addrs[0], addrs[1],
+			},
+		},
+		{
+			name: "updates",
+			input: []network.AddrDelay{
+				{Addr: addrs[0], Delay: 5},
+				{Addr: addrs[1], Delay: 4},
+				{Addr: addrs[2], Delay: 3},
+				{Addr: addrs[3], Delay: 2},
+				{Addr: addrs[4], Delay: 1},
+				{Addr: addrs[0], Delay: 1},
+				{Addr: addrs[1], Delay: 2},
+				{Addr: addrs[2], Delay: 3},
+				{Addr: addrs[3], Delay: 4},
+				{Addr: addrs[4], Delay: 5},
+				{Addr: addrs[3], Delay: 0},
+			},
+			output: []ma.Multiaddr{
+				addrs[3], addrs[0], addrs[1], addrs[2], addrs[4],
+			},
+		},
+	}
+	for _, tc := range testcase {
+		t.Run(tc.name, func(t *testing.T) {
+			q := newDialQueue()
+			for i := 0; i < len(tc.input); i++ {
+				q.Add(tc.input[i])
+			}
+			for i := 0; i < len(tc.output); i++ {
+				v := q.pop()
+				if !tc.output[i].Equal(v.Addr) {
+					t.Errorf("failed priority queue property: expected: %s got: %s", tc.output[i], v.Addr)
+				}
+			}
+			if q.len() != 0 {
+				t.Errorf("expected queue to be empty at end. got: %d", q.len())
+			}
+		})
+	}
+}
+
+func TestDialQueueNextBatch(t *testing.T) {
+	addrs := make([]ma.Multiaddr, 0)
+	for i := 0; i < 10; i++ {
+		addrs = append(addrs, ma.StringCast(fmt.Sprintf("/ip4/1.2.3.4/tcp/%d", i)))
+	}
+	testcase := []struct {
+		name   string
+		input  []network.AddrDelay
+		output [][]ma.Multiaddr
+	}{
+		{
+			name: "next batch",
+			input: []network.AddrDelay{
+				{Addr: addrs[0], Delay: 3},
+				{Addr: addrs[1], Delay: 2},
+				{Addr: addrs[2], Delay: 1},
+				{Addr: addrs[3], Delay: 1},
+			},
+			output: [][]ma.Multiaddr{
+				{addrs[2], addrs[3]},
+				{addrs[1]},
+				{addrs[0]},
+			},
+		},
+		{
+			name: "priority queue property 2",
+			input: []network.AddrDelay{
+				{Addr: addrs[0], Delay: 5},
+				{Addr: addrs[1], Delay: 3},
+				{Addr: addrs[2], Delay: 2},
+				{Addr: addrs[3], Delay: 1},
+				{Addr: addrs[4], Delay: 1},
+			},
+
+			output: [][]ma.Multiaddr{
+				{addrs[3], addrs[4]},
+				{addrs[2]},
+				{addrs[1]},
+				{addrs[0]},
+			},
+		},
+		{
+			name: "updates",
+			input: []network.AddrDelay{
+				{Addr: addrs[0], Delay: 5}, // is last
+				{Addr: addrs[1], Delay: 4},
+				{Addr: addrs[2], Delay: 1},
+				{Addr: addrs[0], Delay: 0}, // is not first
+				{Addr: addrs[1], Delay: 5},
+				{Addr: addrs[3], Delay: 5},
+			},
+			output: [][]ma.Multiaddr{
+				{addrs[0]},
+				{addrs[2]},
+				{addrs[1], addrs[3]},
+			},
+		},
+		{
+			name:  "null input",
+			input: []network.AddrDelay{},
+			output: [][]ma.Multiaddr{
+				{},
+				{},
+			},
+		},
+	}
+	for _, tc := range testcase {
+		t.Run(tc.name, func(t *testing.T) {
+			q := newDialQueue()
+			for i := 0; i < len(tc.input); i++ {
+				q.Add(tc.input[i])
+			}
+			for _, batch := range tc.output {
+				b := q.NextBatch()
+				if len(batch) != len(b) {
+					t.Errorf("expected %d elements got %d", len(batch), len(b))
+				}
+				sort.Slice(b, func(i, j int) bool { return b[i].Addr.String() < b[j].Addr.String() })
+				sort.Slice(batch, func(i, j int) bool { return batch[i].String() < batch[j].String() })
+				for i := 0; i < len(b); i++ {
+					if !b[i].Addr.Equal(batch[i]) {
+						log.Errorf("expected %s got %s", batch[i], b[i].Addr)
+					}
+				}
+			}
+			if q.len() != 0 {
+				t.Errorf("expected queue to be empty at end. got: %d", q.len())
+			}
+		})
+	}
+}
+
 // timedDial is a dial to a single address of the peer
 type timedDial struct {
 	// addr is the address to dial
@@ -610,6 +788,7 @@ loop:
 			break
 		}
 	}
+
 	if connected {
 		// ensure we don't receive any extra connections
 		select {
@@ -810,182 +989,32 @@ func TestDialWorkerLoopSchedulingProperty(t *testing.T) {
 	}
 }
 
-func TestDialQueuePriority(t *testing.T) {
-	addrs := make([]ma.Multiaddr, 0)
-	ports := make(map[int]struct{})
-	for i := 0; i < 10; i++ {
-		for {
-			p := 1 + mrand.Intn(10000)
-			if _, ok := ports[p]; ok {
-				continue
-			}
-			ports[p] = struct{}{}
-			addrs = append(addrs, ma.StringCast(fmt.Sprintf("/ip4/1.2.3.4/tcp/%d", p)))
-			break
-		}
-	}
-	testcase := []struct {
-		name   string
-		input  []network.AddrDelay
-		output []ma.Multiaddr
-	}{
-		{
-			name: "priority queue property",
-			input: []network.AddrDelay{
-				{Addr: addrs[0], Delay: 10},
-				{Addr: addrs[1], Delay: 20},
-				{Addr: addrs[2], Delay: 2},
+func TestDialWorkerLoopQuicOverTCP(t *testing.T) {
+	tc := schedulingTestCase{
+		input: []timedDial{
+			{
+				addr:    ma.StringCast("/ip4/127.0.0.1/udp/20000/quic"),
+				delay:   0,
+				success: true,
 			},
-			output: []ma.Multiaddr{
-				addrs[2], addrs[0], addrs[1],
+			{
+				addr:    ma.StringCast("/ip4/127.0.0.1/tcp/20000"),
+				delay:   30 * time.Millisecond,
+				success: true,
 			},
 		},
-		{
-			name: "priority queue property 2",
-			input: []network.AddrDelay{
-				{Addr: addrs[0], Delay: 8},
-				{Addr: addrs[1], Delay: 9},
-				{Addr: addrs[2], Delay: 6},
-				{Addr: addrs[3], Delay: 7},
-				{Addr: addrs[4], Delay: 4},
-				{Addr: addrs[5], Delay: 5},
-				{Addr: addrs[6], Delay: 2},
-				{Addr: addrs[7], Delay: 3},
-				{Addr: addrs[8], Delay: 1},
-			},
-			output: []ma.Multiaddr{
-				addrs[8], addrs[6], addrs[7], addrs[4], addrs[5], addrs[2], addrs[3], addrs[0], addrs[1],
-			},
-		},
-		{
-			name: "updates",
-			input: []network.AddrDelay{
-				{Addr: addrs[0], Delay: 5},
-				{Addr: addrs[1], Delay: 4},
-				{Addr: addrs[2], Delay: 3},
-				{Addr: addrs[3], Delay: 2},
-				{Addr: addrs[4], Delay: 1},
-				{Addr: addrs[0], Delay: 1},
-				{Addr: addrs[1], Delay: 2},
-				{Addr: addrs[2], Delay: 3},
-				{Addr: addrs[3], Delay: 4},
-				{Addr: addrs[4], Delay: 5},
-				{Addr: addrs[3], Delay: 0},
-			},
-			output: []ma.Multiaddr{
-				addrs[3], addrs[0], addrs[1], addrs[2], addrs[4],
-			},
-		},
+		maxDuration: 20 * time.Millisecond,
 	}
-	for _, tc := range testcase {
-		t.Run(tc.name, func(t *testing.T) {
-			q := newDialQueue()
-			for i := 0; i < len(tc.input); i++ {
-				q.Add(tc.input[i])
-			}
-			for i := 0; i < len(tc.output); i++ {
-				v := q.pop()
-				if !tc.output[i].Equal(v.Addr) {
-					t.Errorf("failed priority queue property: expected: %s got: %s", tc.output[i], v.Addr)
-				}
-			}
-			if q.len() != 0 {
-				t.Errorf("expected queue to be empty at end. got: %d", q.len())
-			}
-		})
-	}
-}
+	s1 := makeSwarmWithNoListenAddrs(t)
+	defer s1.Close()
 
-func TestDialQueueNextBatch(t *testing.T) {
-	addrs := make([]ma.Multiaddr, 0)
-	for i := 0; i < 10; i++ {
-		addrs = append(addrs, ma.StringCast(fmt.Sprintf("/ip4/1.2.3.4/tcp/%d", i)))
-	}
-	testcase := []struct {
-		name   string
-		input  []network.AddrDelay
-		output [][]ma.Multiaddr
-	}{
-		{
-			name: "next batch",
-			input: []network.AddrDelay{
-				{Addr: addrs[0], Delay: 3},
-				{Addr: addrs[1], Delay: 2},
-				{Addr: addrs[2], Delay: 1},
-				{Addr: addrs[3], Delay: 1},
-			},
-			output: [][]ma.Multiaddr{
-				{addrs[2], addrs[3]},
-				{addrs[1]},
-				{addrs[0]},
-			},
-		},
-		{
-			name: "priority queue property 2",
-			input: []network.AddrDelay{
-				{Addr: addrs[0], Delay: 5},
-				{Addr: addrs[1], Delay: 3},
-				{Addr: addrs[2], Delay: 2},
-				{Addr: addrs[3], Delay: 1},
-				{Addr: addrs[4], Delay: 1},
-			},
+	s2 := makeSwarmWithNoListenAddrs(t)
+	defer s2.Close()
 
-			output: [][]ma.Multiaddr{
-				{addrs[3], addrs[4]},
-				{addrs[2]},
-				{addrs[1]},
-				{addrs[0]},
-			},
-		},
-		{
-			name: "updates",
-			input: []network.AddrDelay{
-				{Addr: addrs[0], Delay: 5}, // is last
-				{Addr: addrs[1], Delay: 4},
-				{Addr: addrs[2], Delay: 1},
-				{Addr: addrs[0], Delay: 0}, // is not first
-				{Addr: addrs[1], Delay: 5},
-				{Addr: addrs[3], Delay: 5},
-			},
-			output: [][]ma.Multiaddr{
-				{addrs[0]},
-				{addrs[2]},
-				{addrs[1], addrs[3]},
-			},
-		},
-		{
-			name:  "null input",
-			input: []network.AddrDelay{},
-			output: [][]ma.Multiaddr{
-				{},
-				{},
-			},
-		},
-	}
-	for _, tc := range testcase {
-		t.Run(tc.name, func(t *testing.T) {
-			q := newDialQueue()
-			for i := 0; i < len(tc.input); i++ {
-				q.Add(tc.input[i])
-			}
-			for _, batch := range tc.output {
-				b := q.NextBatch()
-				if len(batch) != len(b) {
-					t.Errorf("expected %d elements got %d", len(batch), len(b))
-				}
-				sort.Slice(b, func(i, j int) bool { return b[i].Addr.String() < b[j].Addr.String() })
-				sort.Slice(batch, func(i, j int) bool { return batch[i].String() < batch[j].String() })
-				for i := 0; i < len(b); i++ {
-					if !b[i].Addr.Equal(batch[i]) {
-						log.Errorf("expected %s got %s", batch[i], b[i].Addr)
-					}
-				}
-			}
-			if q.len() != 0 {
-				t.Errorf("expected queue to be empty at end. got: %d", q.len())
-			}
-		})
-	}
+	// we use the default ranker here
+
+	err := checkDialWorkerLoopScheduling(t, s1, s2, tc)
+	require.NoError(t, err)
 }
 
 func BenchmarkDialQueue(b *testing.B) {
