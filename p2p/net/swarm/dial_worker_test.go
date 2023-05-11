@@ -360,6 +360,7 @@ func TestDialWorkerLoopAddrDedup(t *testing.T) {
 			return
 		}
 		go func() {
+			ch <- struct{}{}
 			for {
 				conn, err := list.Accept()
 				if err != nil {
@@ -372,10 +373,11 @@ func TestDialWorkerLoopAddrDedup(t *testing.T) {
 		<-closech
 		list.Close()
 	}
-	ch := make(chan struct{})
+	ch := make(chan struct{}, 1)
 	closeCh := make(chan struct{})
 	go acceptAndClose(t1, ch, closeCh)
 	defer close(closeCh)
+	<-ch // the routine has started listening on addr
 
 	s1.Peerstore().AddAddrs(s2.LocalPeer(), []ma.Multiaddr{t1}, peerstore.PermanentAddrTTL)
 
