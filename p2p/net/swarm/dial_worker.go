@@ -48,7 +48,7 @@ type pendRequest struct {
 	// At the time of creation addrs is initialised to all the addresses of the peer. On a failed dial,
 	// the addr is removed from the map and err is updated. On a successful dial, the dialRequest is
 	// completed and response is sent with the connection
-	addrs map[ma.Multiaddr]struct{}
+	addrs map[string]struct{}
 }
 
 // addrDial tracks dials to a particular multiaddress.
@@ -83,7 +83,7 @@ type dialWorker struct {
 	pendingRequests map[int]*pendRequest
 	// trackedDials tracks dials to the peers addresses. An entry here is used to ensure that
 	// we dial an address at most once
-	trackedDials map[ma.Multiaddr]*addrDial
+	trackedDials map[string]*addrDial
 	// resch is used to receive response for dials to the peers addresses.
 	resch chan dialResult
 
@@ -103,7 +103,7 @@ func newDialWorker(s *Swarm, p peer.ID, reqch <-chan dialRequest, cl Clock) *dia
 		peer:            p,
 		reqch:           reqch,
 		pendingRequests: make(map[int]*pendRequest),
-		trackedDials:    make(map[ma.Multiaddr]*addrDial),
+		trackedDials:    make(map[string]*addrDial),
 		resch:           make(chan dialResult),
 		cl:              cl,
 	}
@@ -176,17 +176,17 @@ loop:
 			// get the delays to dial these addrs from the swarms dialRanker
 			simConnect, _, _ := network.GetSimultaneousConnect(req.ctx)
 			addrRanking := w.rankAddrs(addrs, simConnect)
-			addrDelay := make(map[ma.Multiaddr]time.Duration)
+			addrDelay := make(map[string]time.Duration)
 
 			// create the pending request object
 			pr := &pendRequest{
 				req:   req,
 				err:   &DialError{Peer: w.peer},
-				addrs: make(map[ma.Multiaddr]struct{}),
+				addrs: make(map[string]struct{}),
 			}
 			for _, adelay := range addrRanking {
-				pr.addrs[adelay.Addr] = struct{}{}
-				addrDelay[adelay.Addr] = adelay.Delay
+				pr.addrs[string(adelay.Addr.Bytes())] = struct{}{}
+				addrDelay[string(adelay.Addr.Bytes())] = adelay.Delay
 			}
 
 			// Check if dials to any of the addrs have completed already
@@ -198,7 +198,7 @@ loop:
 			var tojoin []*addrDial
 
 			for _, adelay := range addrRanking {
-				ad, ok := w.trackedDials[adelay.Addr]
+				ad, ok := w.trackedDials[string(adelay.Addr.Bytes())]
 				if !ok {
 					todial = append(todial, adelay.Addr)
 					continue
@@ -213,7 +213,7 @@ loop:
 				if ad.err != nil {
 					// dial to this addr errored, accumulate the error
 					pr.err.recordErr(ad.addr, ad.err)
-					delete(pr.addrs, ad.addr)
+					delete(pr.addrs, string(ad.addr.Bytes()))
 					continue
 				}
 
@@ -240,7 +240,10 @@ loop:
 						if simConnect, _, _ := network.GetSimultaneousConnect(ad.ctx); !simConnect {
 							ad.ctx = network.WithSimultaneousConnect(ad.ctx, isClient, reason)
 							// update the element in dq to use the simultaneous connect delay.
-							dq.Add(network.AddrDelay{Addr: ad.addr, Delay: addrDelay[ad.addr]})
+							dq.Add(network.AddrDelay{
+								Addr:  ad.addr,
+								Delay: addrDelay[string(ad.addr.Bytes())],
+							})
 						}
 					}
 				}
@@ -251,8 +254,8 @@ loop:
 			if len(todial) > 0 {
 				// these are new addresses, track them and add them to dq
 				for _, a := range todial {
-					w.trackedDials[a] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
-					dq.Add(network.AddrDelay{Addr: a, Delay: addrDelay[a]})
+					w.trackedDials[string(a.Bytes())] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
+					dq.Add(network.AddrDelay{Addr: a, Delay: addrDelay[string(a.Bytes())]})
 				}
 			}
 			// setup dialTimer for updates to dq
@@ -264,7 +267,7 @@ loop:
 			// dials have completed.
 			for _, adelay := range dq.NextBatch() {
 				// spawn the dial
-				ad := w.trackedDials[adelay.Addr]
+				ad := w.trackedDials[string(adelay.Addr.Bytes())]
 				ad.dialed = true
 				err := w.s.dialNextAddr(ad.ctx, w.peer, ad.addr, w.resch)
 				if err != nil {
@@ -289,7 +292,7 @@ loop:
 			if res.Conn != nil {
 				w.connected = true
 			}
-			ad := w.trackedDials[res.Addr]
+			ad := w.trackedDials[string(res.Addr.Bytes())]
 
 			if res.Conn != nil {
 				// we got a connection, add it to the swarm
@@ -346,7 +349,7 @@ func (w *dialWorker) dispatchError(ad *addrDial, err error) {
 		// accumulate the error
 		pr.err.recordErr(ad.addr, err)
 
-		delete(pr.addrs, ad.addr)
+		delete(pr.addrs, string(ad.addr.Bytes()))
 		if len(pr.addrs) == 0 {
 			// all addrs have erred, dispatch dial error
 			// but first do a last one check in case an acceptable connection has landed from
@@ -368,7 +371,7 @@ func (w *dialWorker) dispatchError(ad *addrDial, err error) {
 	// another dial is in progress, and needs to do a direct connection without inhibitions from
 	// dial backoff.
 	if err == ErrDialBackoff {
-		delete(w.trackedDials, ad.addr)
+		delete(w.trackedDials, string(ad.addr.Bytes()))
 	}
 }
 
@@ -389,10 +392,10 @@ type dialQueue struct {
 
 // newDialQueue returns a new dialQueue
 func newDialQueue() *dialQueue {
-	return &dialQueue{}
+	return &dialQueue{q: make([]network.AddrDelay, 0, 16)}
 }
 
-// Add adds adelay to the queue. if another elements exists in the queue with
+// Add adds adelay to the queue. If another element exists in the queue with
 // the same address, it replaces that element.
 func (dq *dialQueue) Add(adelay network.AddrDelay) {
 	for i := 0; i < dq.len(); i++ {
@@ -424,22 +427,17 @@ func (dq *dialQueue) NextBatch() []network.AddrDelay {
 	if dq.len() == 0 {
 		return nil
 	}
-	res := make([]network.AddrDelay, 0)
-	top := dq.top()
+
+	// i is the index of the second highest priority element
 	var i int
-	for i = 0; i < len(dq.q); i++ {
-		if dq.q[i].Delay != top.Delay {
+	for i = 0; i < dq.len(); i++ {
+		if dq.q[i].Delay != dq.q[0].Delay {
 			break
 		}
-		res = append(res, dq.q[i])
 	}
+	res := dq.q[:i]
 	dq.q = dq.q[i:]
 	return res
-}
-
-// len is the length of the queue. Calling top on an empty queue panics.
-func (dq *dialQueue) len() int {
-	return len(dq.q)
 }
 
 // top returns the top element of the queue
@@ -447,10 +445,7 @@ func (dq *dialQueue) top() network.AddrDelay {
 	return dq.q[0]
 }
 
-// pop removes the top element of the queue. This is useful for testing the
-// priority queue property
-func (dq *dialQueue) pop() network.AddrDelay {
-	v := dq.q[0]
-	dq.q = dq.q[1:]
-	return v
+// len returns the number of elements in the queue
+func (dq *dialQueue) len() int {
+	return len(dq.q)
 }
