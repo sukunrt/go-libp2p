@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -350,42 +349,32 @@ func TestDialWorkerLoopAddrDedup(t *testing.T) {
 	s2 := makeSwarm(t)
 	defer s1.Close()
 	defer s2.Close()
-
 	t1 := ma.StringCast(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 10000))
 	t2 := ma.StringCast(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 10000))
 
-	// connCount counts the number of connection attempts made
-	var connCount atomic.Int64
-
-	// acceptAndClose accepts two tcp connections and closes them
-	// we need to wait for the second connection before failing because otherwise the
-	// address would be placed on backoff
-	acceptAndClose := func(a ma.Multiaddr, closech chan struct{}) {
+	// acceptAndClose accepts a connection and closes it
+	acceptAndClose := func(a ma.Multiaddr, ch chan struct{}, closech chan struct{}) {
 		list, err := manet.Listen(a)
 		if err != nil {
 			t.Error(err)
 			return
 		}
 		go func() {
-			conn1, err := list.Accept()
-			if err != nil {
-				return
+			for {
+				conn, err := list.Accept()
+				if err != nil {
+					return
+				}
+				ch <- struct{}{}
+				conn.Close()
 			}
-			connCount.Add(1)
-			conn2, err := list.Accept()
-			if err != nil {
-				conn1.Close()
-				return
-			}
-			connCount.Add(1)
-			conn1.Close()
-			conn2.Close()
 		}()
 		<-closech
 		list.Close()
 	}
+	ch := make(chan struct{})
 	closeCh := make(chan struct{})
-	go acceptAndClose(t1, closeCh)
+	go acceptAndClose(t1, ch, closeCh)
 	defer close(closeCh)
 
 	s1.Peerstore().AddAddrs(s2.LocalPeer(), []ma.Multiaddr{t1}, peerstore.PermanentAddrTTL)
@@ -399,14 +388,21 @@ func TestDialWorkerLoopAddrDedup(t *testing.T) {
 	defer close(reqch)
 
 	reqch <- dialRequest{ctx: context.Background(), resch: resch}
+	<-ch
+	<-resch
+	// Need to clear backoff otherwise the dial attempt would not be made
+	s1.Backoff().Clear(s2.LocalPeer())
 
 	s1.Peerstore().ClearAddrs(s2.LocalPeer())
 	s1.Peerstore().AddAddrs(s2.LocalPeer(), []ma.Multiaddr{t2}, peerstore.PermanentAddrTTL)
 
 	reqch <- dialRequest{ctx: context.Background(), resch: resch}
-	require.Never(t, func() bool { return connCount.Load() > 1 }, 3*time.Second, 100*time.Millisecond)
-	if connCount.Load() != 1 {
-		t.Errorf("did expect one connection. got 0")
+	select {
+	case r := <-resch:
+		require.Error(t, r.err)
+	case <-ch:
+		t.Errorf("didn't expect a connection attempt")
+	case <-time.After(5 * time.Second):
+		t.Errorf("expected a fail response")
 	}
-
 }
