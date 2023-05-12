@@ -935,6 +935,83 @@ func TestDialWorkerLoopQuicOverTCP(t *testing.T) {
 	err := checkDialWorkerLoopScheduling(t, s1, s2, tc)
 	require.NoError(t, err)
 }
+
+func TestDialWorkerLoopHolePunching(t *testing.T) {
+	s1 := makeSwarmWithNoListenAddrs(t)
+	defer s1.Close()
+
+	s2 := makeSwarmWithNoListenAddrs(t)
+	defer s2.Close()
+
+	// t1 will accept and keep the other end waiting
+	t1 := ma.StringCast("/ip4/127.0.0.1/tcp/10000")
+	recvCh := make(chan struct{})
+	list, ch := makeTCPListener(t, t1, recvCh) // ignore ch because we want to hang forever
+	defer list.Close()
+	defer func() { ch <- struct{}{} }() // close listener
+
+	// t2 will succeed
+	t2 := ma.StringCast("/ip4/127.0.0.1/tcp/10001")
+
+	err := s2.AddListenAddr(t2)
+	if err != nil {
+		t.Error(err)
+	}
+
+	s1.dialRanker = func(addrs []ma.Multiaddr) (res []network.AddrDelay) {
+		res = make([]network.AddrDelay, len(addrs))
+		for i := 0; i < len(addrs); i++ {
+			delay := 10 * time.Second
+			if addrs[i].Equal(t1) {
+				//fire t1 immediately
+				delay = 0
+			} else if addrs[i].Equal(t2) {
+				// delay t2 by 100ms
+				// without holepunch this call will not happen
+				delay = 100 * time.Millisecond
+			}
+			res[i] = network.AddrDelay{Addr: addrs[i], Delay: delay}
+		}
+		return
+	}
+	s1.Peerstore().AddAddrs(s2.LocalPeer(), []ma.Multiaddr{t1, t2}, peerstore.PermanentAddrTTL)
+
+	reqch := make(chan dialRequest)
+	resch := make(chan dialResponse, 2)
+
+	cl := newMockClock()
+	worker := newDialWorker(s1, s2.LocalPeer(), reqch, cl)
+	go worker.loop()
+	defer worker.wg.Wait()
+	defer close(reqch)
+
+	reqch <- dialRequest{ctx: context.Background(), resch: resch}
+	<-recvCh // received connection on t1
+
+	select {
+	case <-resch:
+		t.Errorf("didn't expect connection to succeed")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	hpCtx := network.WithSimultaneousConnect(context.Background(), true, "testing")
+	// with holepunch request, t2 will be dialed immediately
+	reqch <- dialRequest{ctx: hpCtx, resch: resch}
+	select {
+	case r := <-resch:
+		require.NoError(t, r.err)
+	case <-time.After(5 * time.Second):
+		t.Errorf("expected conn to succeed")
+	}
+
+	select {
+	case r := <-resch:
+		require.NoError(t, r.err)
+	case <-time.After(5 * time.Second):
+		t.Errorf("expected conn to succeed")
+	}
+}
+
 func TestDialWorkerLoopAddrDedup(t *testing.T) {
 	s1 := makeSwarm(t)
 	s2 := makeSwarm(t)
