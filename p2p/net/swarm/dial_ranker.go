@@ -65,26 +65,11 @@ func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 //
 // If direct addresses are present we delay all relay addresses by 500 millisecond
 func defaultDialRanker(addrs []ma.Multiaddr) []network.AddrDelay {
-	ip4 := make([]ma.Multiaddr, 0, len(addrs))
-	ip6 := make([]ma.Multiaddr, 0, len(addrs))
-	pvt := make([]ma.Multiaddr, 0, len(addrs))
-	relay := make([]ma.Multiaddr, 0, len(addrs))
 
-	res := make([]network.AddrDelay, 0, len(addrs))
-	for _, a := range addrs {
-		switch {
-		case isRelayAddr(a):
-			relay = append(relay, a)
-		case !manet.IsPublicAddr(a):
-			pvt = append(pvt, a)
-		case isProtocolAddr(a, ma.P_IP4):
-			ip4 = append(ip4, a)
-		case isProtocolAddr(a, ma.P_IP6):
-			ip6 = append(ip6, a)
-		default:
-			res = append(res, network.AddrDelay{Addr: a, Delay: 0})
-		}
-	}
+	relay, addrs := filterAddr(addrs, isRelayAddr)
+	pvt, addrs := filterAddr(addrs, manet.IsPrivateAddr)
+	ip4, addrs := filterAddr(addrs, func(a ma.Multiaddr) bool { return isProtocolAddr(a, ma.P_IP4) })
+	ip6, addrs := filterAddr(addrs, func(a ma.Multiaddr) bool { return isProtocolAddr(a, ma.P_IP6) })
 
 	var relayOffset time.Duration = 0
 	if len(ip4) > 0 || len(ip6) > 0 {
@@ -92,6 +77,10 @@ func defaultDialRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 		relayOffset = relayDelay
 	}
 
+	res := make([]network.AddrDelay, 0, len(addrs))
+	for i := 0; i < len(addrs); i++ {
+		res = append(res, network.AddrDelay{Addr: addrs[i], Delay: 0})
+	}
 	res = append(res, getAddrDelay(pvt, privateTCPDelay, privateQUICDelay, 0)...)
 	res = append(res, getAddrDelay(ip4, publicTCPDelay, publicQUICDelay, 0)...)
 	res = append(res, getAddrDelay(ip6, publicTCPDelay, publicQUICDelay, 0)...)
@@ -209,6 +198,26 @@ func addrPort(a ma.Multiaddr, p int) netip.AddrPort {
 }
 
 func isProtocolAddr(a ma.Multiaddr, p int) bool {
-	_, err := a.ValueForProtocol(p)
-	return err == nil
+	// separately handle ip4 and ip6 to avoid allocations
+	found := false
+	ma.ForEach(a, func(c ma.Component) bool {
+		if c.Protocol().Code == p {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// filterAddr filters an address slice in place
+func filterAddr(addrs []ma.Multiaddr, f func(a ma.Multiaddr) bool) (filtered, rest []ma.Multiaddr) {
+	j := 0
+	for i := 0; i < len(addrs); i++ {
+		if f(addrs[i]) {
+			addrs[i], addrs[j] = addrs[j], addrs[i]
+			j++
+		}
+	}
+	return addrs[:j], addrs[j:]
 }
