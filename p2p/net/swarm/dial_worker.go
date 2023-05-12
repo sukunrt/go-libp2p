@@ -176,13 +176,13 @@ loop:
 			// get the delays to dial these addrs from the swarms dialRanker
 			simConnect, _, _ := network.GetSimultaneousConnect(req.ctx)
 			addrRanking := w.rankAddrs(addrs, simConnect)
-			addrDelay := make(map[string]time.Duration)
+			addrDelay := make(map[string]time.Duration, len(addrRanking))
 
 			// create the pending request object
 			pr := &pendRequest{
 				req:   req,
 				err:   &DialError{Peer: w.peer},
-				addrs: make(map[string]struct{}),
+				addrs: make(map[string]struct{}, len(addrRanking)),
 			}
 			for _, adelay := range addrRanking {
 				pr.addrs[string(adelay.Addr.Bytes())] = struct{}{}
@@ -269,7 +269,11 @@ loop:
 			// addresses
 			for _, adelay := range dq.NextBatch() {
 				// spawn the dial
-				ad := w.trackedDials[string(adelay.Addr.Bytes())]
+				ad, ok := w.trackedDials[string(adelay.Addr.Bytes())]
+				if !ok {
+					log.Errorf("SWARM BUG: no entry for address %s in trackedDials", adelay.Addr)
+					continue
+				}
 				ad.dialed = true
 				err := w.s.dialNextAddr(ad.ctx, w.peer, ad.addr, w.resch)
 				if err != nil {
