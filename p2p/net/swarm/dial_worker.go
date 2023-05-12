@@ -263,8 +263,10 @@ loop:
 
 		case <-dialTimer.Ch():
 			// It's time to dial the next batch of addresses.
-			// We don't check the delay here because an early trigger means all in flight
-			// dials have completed.
+			// We don't check the delay of the addresses received from the queue here
+			// because if the timer triggered before the delay, it means that all
+			// the inflight dials have errored and we should dial the next batch of
+			// addresses
 			for _, adelay := range dq.NextBatch() {
 				// spawn the dial
 				ad := w.trackedDials[string(adelay.Addr.Bytes())]

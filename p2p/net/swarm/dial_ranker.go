@@ -13,11 +13,11 @@ import (
 
 // The 250ms value is from happy eyeballs RFC 8305. This is a rough estimate of 1 RTT
 const (
-	// duration by which tcp dials are delayed relative to quic dial
+	// duration by which TCP dials are delayed relative to QUIC dial
 	publicTCPDelay  = 250 * time.Millisecond
 	privateTCPDelay = 30 * time.Millisecond
 
-	// duration by which quic dials are delayed relative to first quic dial
+	// duration by which QUIC dials are delayed relative to first QUIC dial
 	publicQUICDelay  = 250 * time.Millisecond
 	privateQUICDelay = 30 * time.Millisecond
 
@@ -37,39 +37,41 @@ func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 // defaultDialRanker is the default ranking logic.
 //
 // We rank private, public ip4, public ip6, relay addresses separately.
+// We do not prefer IPv6 over IPv4 as recommended by Happy Eyeballs RFC 8305. Currently there is no
+// mechanism to detect an IPv6 blackhole, so we dial both IPv4 and IPv6 addresses in parallel.
+// If direct addresses are present we delay all relay addresses by 500 millisecond
+
 // In each group we apply the following logic:
 //
 // First we filter the addresses we don't want to dial. We are filtering these addresses because we
 // have an address that we prefer more than that address and which has the same reachability
 //
-//	If a quic-v1 address is present we don't dial quic or webtransport address on the same (ip,port)
-//	combination. If a quicDraft29 or webtransport address is reachable, quic-v1 will definitely be
-//	reachable. quicDraft29 is deprecated in favor of quic-v1 and quic-v1 is more performant than
+//	If a QUIC-v1 address is present we don't dial QUIC or webtransport address on the same (ip,port)
+//	combination. If a QUICDraft29 or webtransport address is reachable, QUIC-v1 will definitely be
+//	reachable. QUICDraft29 is deprecated in favour of QUIC-v1 and QUIC-v1 is more performant than
 //	webtransport
 //
-//	If a tcp address is present we don't dial ws or wss address on the same (ip, port) combination.
-//	If a ws address is reachable, tcp will definitely be reachable and it'll be more performant
+//	If a TCP address is present we don't dial ws or wss address on the same (ip, port) combination.
+//	If a ws address is reachable, TCP will definitely be reachable and it'll be more performant
 //
 // Then we rank the addresses:
 //
-//	If two quic addresses are present, we dial the quic address with the lowest port first. This is more
-//	likely to be the listen port. After this we dial the rest of the quic addresses delayed by QUICDelay.
+//	If two QUIC addresses are present, we dial the QUIC address with the lowest port first. This is more
+//	likely to be the listen port. After this we dial the rest of the QUIC addresses delayed by QUICDelay.
 //
-//	If a quic or webtransport address is present, tcp address dials are delayed by TCPDelay relative to
-//	the last quic dial.
+//	If a QUIC or webtransport address is present, TCP address dials are delayed by TCPDelay relative to
+//	the last QUIC dial.
 //
 //	TCPDelay for public ip4 and public ip6 is publicTCPDelay
 //	TCPDelay for private addresses is privateTCPDelay
 //	QUICDelay for public addresses is publicQUICDelay
 //	QUICDelay for private addresses is privateQUICDelay
-//
-// If direct addresses are present we delay all relay addresses by 500 millisecond
 func defaultDialRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 
-	relay, addrs := filterAddr(addrs, isRelayAddr)
-	pvt, addrs := filterAddr(addrs, manet.IsPrivateAddr)
-	ip4, addrs := filterAddr(addrs, func(a ma.Multiaddr) bool { return isProtocolAddr(a, ma.P_IP4) })
-	ip6, addrs := filterAddr(addrs, func(a ma.Multiaddr) bool { return isProtocolAddr(a, ma.P_IP6) })
+	relay, addrs := filterAddrs(addrs, isRelayAddr)
+	pvt, addrs := filterAddrs(addrs, manet.IsPrivateAddr)
+	ip4, addrs := filterAddrs(addrs, func(a ma.Multiaddr) bool { return isProtocolAddr(a, ma.P_IP4) })
+	ip6, addrs := filterAddrs(addrs, func(a ma.Multiaddr) bool { return isProtocolAddr(a, ma.P_IP6) })
 
 	var relayOffset time.Duration = 0
 	if len(ip4) > 0 || len(ip6) > 0 {
@@ -95,7 +97,7 @@ func defaultDialRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.Duration,
 	offset time.Duration) []network.AddrDelay {
 
-	// First make a map of quicV1 and tcp AddrPorts.
+	// First make a map of QUICV1 and TCP AddrPorts.
 	quicV1Addr := make(map[netip.AddrPort]struct{})
 	tcpAddr := make(map[netip.AddrPort]struct{})
 	for _, a := range addrs {
@@ -114,15 +116,15 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 	i := 0
 	for _, a := range addrs {
 		switch {
-		// If a quicDraft29 or webtransport address is reachable, quic-v1 will also be reachable. So we
-		// drop the quicDraft29 or webtransport address
-		// We prefer quic-v1 over the older quic-draft29 address.
-		// We prefer quic-v1 over webtransport as it is more performant.
+		// If a QUICDraft29 or webtransport address is reachable, QUIC-v1 will also be reachable. So we
+		// drop the QUICDraft29 or webtransport address
+		// We prefer QUIC-v1 over the older QUIC-draft29 address.
+		// We prefer QUIC-v1 over webtransport as it is more performant.
 		case isProtocolAddr(a, ma.P_WEBTRANSPORT) || isProtocolAddr(a, ma.P_QUIC):
 			if _, ok := quicV1Addr[addrPort(a, ma.P_UDP)]; ok {
 				continue
 			}
-		// If a ws address is reachable, tcp will also be reachable and it'll be more performant
+		// If a ws address is reachable, TCP will also be reachable and it'll be more performant
 		case isProtocolAddr(a, ma.P_WS) || isProtocolAddr(a, ma.P_WSS):
 			if _, ok := tcpAddr[addrPort(a, ma.P_TCP)]; ok {
 				continue
@@ -140,8 +142,8 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 		delay := offset
 		switch {
 		case isProtocolAddr(a, ma.P_QUIC) || isProtocolAddr(a, ma.P_QUIC_V1):
-			// For quic addresses we dial a single address first and then wait for quicDelay
-			// After quicDelay we dial rest of the quic addresses
+			// For QUIC addresses we dial a single address first and then wait for QUICDelay
+			// After QUICDelay we dial rest of the QUIC addresses
 			if quicCount > 0 {
 				delay += quicDelay
 			}
@@ -188,7 +190,7 @@ func score(a ma.Multiaddr) int {
 }
 
 // addrPort returns the ip and port for a. p should be either ma.P_TCP or ma.P_UDP.
-// a must be an (ip, tcp) or (ip, udp) address.
+// a must be an (ip, TCP) or (ip, udp) address.
 func addrPort(a ma.Multiaddr, p int) netip.AddrPort {
 	ip, _ := manet.ToIP(a)
 	port, _ := a.ValueForProtocol(p)
@@ -210,8 +212,8 @@ func isProtocolAddr(a ma.Multiaddr, p int) bool {
 	return found
 }
 
-// filterAddr filters an address slice in place
-func filterAddr(addrs []ma.Multiaddr, f func(a ma.Multiaddr) bool) (filtered, rest []ma.Multiaddr) {
+// filterAddrs filters an address slice in place
+func filterAddrs(addrs []ma.Multiaddr, f func(a ma.Multiaddr) bool) (filtered, rest []ma.Multiaddr) {
 	j := 0
 	for i := 0; i < len(addrs); i++ {
 		if f(addrs[i]) {
