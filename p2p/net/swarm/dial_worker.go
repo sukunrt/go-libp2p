@@ -146,7 +146,7 @@ loop:
 		// The loop has three parts
 		//  1. Input requests are received on w.reqch. If a suitable connection is not available we create
 		//     a pendRequest object to track the dialRequest and add the addresses to dq.
-		//  2. Addresses from the dialQueue are dialed at approprite time intervals depending on delay logic.
+		//  2. Addresses from the dialQueue are dialed at appropriate time intervals depending on delay logic.
 		//     We are notified of the completion of these dials on w.resch.
 		//  3. Responses for dials are received on w.resch. On receiving a response, we updated the pendRequests
 		//     interested in dials on this address.
@@ -157,9 +157,9 @@ loop:
 				return
 			}
 			// We have received a new request. If we do not have a suitable connection,
-			// track this dialRequest with a pendRequest
-			// enqueue the peers addresses relevant to this request in dq
-			// track dials to the addresses relevant to this request
+			// track this dialRequest with a pendRequest.
+			// Enqueue the peer's addresses relevant to this request in dq and
+			// track dials to the addresses relevant to this request.
 
 			c, err := w.s.bestAcceptableConnToPeer(req.ctx, w.peer)
 			if c != nil || err != nil {
@@ -262,8 +262,8 @@ loop:
 			scheduleNextDial()
 
 		case <-dialTimer.Ch():
-			// It is time to dial the most urgent addresses.
-			// We dont check the delay here because an early trigger means all in flight
+			// It's time to dial the next batch of addresses.
+			// We don't check the delay here because an early trigger means all in flight
 			// dials have completed.
 			for _, adelay := range dq.NextBatch() {
 				// spawn the dial
@@ -386,7 +386,7 @@ func (w *dialWorker) rankAddrs(addrs []ma.Multiaddr, isSimConnect bool) []networ
 
 // dialQueue is a priority queue used to schedule dials
 type dialQueue struct {
-	// q is the queue maintained as a heap
+	// q contains dials ordered by delay
 	q []network.AddrDelay
 }
 
@@ -413,7 +413,7 @@ func (dq *dialQueue) Add(adelay network.AddrDelay) {
 
 	for i := 0; i < dq.len(); i++ {
 		if dq.q[i].Delay > adelay.Delay {
-			dq.q = append(dq.q, adelay) // extend the slice
+			dq.q = append(dq.q, network.AddrDelay{}) // extend the slice
 			copy(dq.q[i+1:], dq.q[i:])
 			dq.q[i] = adelay
 			return

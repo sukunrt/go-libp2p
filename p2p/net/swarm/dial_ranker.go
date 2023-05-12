@@ -44,7 +44,7 @@ func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 //
 //	If a quic-v1 address is present we don't dial quic or webtransport address on the same (ip,port)
 //	combination. If a quicDraft29 or webtransport address is reachable, quic-v1 will definitely be
-//	reachable. quicDraft29 is deprecated in favour of quic-v1 and quic-v1 is more performant than
+//	reachable. quicDraft29 is deprecated in favor of quic-v1 and quic-v1 is more performant than
 //	webtransport
 //
 //	If a tcp address is present we don't dial ws or wss address on the same (ip, port) combination.
