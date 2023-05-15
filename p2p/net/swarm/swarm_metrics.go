@@ -17,6 +17,7 @@ import (
 )
 
 const metricNamespace = "libp2p_swarm"
+const epsilon = 1e-6
 
 var (
 	connsOpened = prometheus.NewCounterVec(
@@ -49,7 +50,7 @@ var (
 			Name:      "dial_errors_total",
 			Help:      "Dial Error",
 		},
-		[]string{"transport", "error", "ip_version"},
+		[]string{"transport", "error", "ip_version", "conn_transport"},
 	)
 	connDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -69,6 +70,23 @@ var (
 		},
 		[]string{"transport", "security", "muxer", "early_muxer", "ip_version"},
 	)
+	dialsPerPeer = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Name:      "dials_per_peer",
+			Help:      "Number of addresses dialed per peer",
+			// epsilon is needed to avoid counting integral values in the lower bucket.
+			Buckets: prometheus.LinearBuckets(0, 1-epsilon, 10),
+		},
+	)
+	dialRankingDelay = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Name:      "dial_ranking_delay_seconds",
+			Help:      "delay introduced by the dial ranking logic",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 1.3, 35),
+		},
+	)
 	collectors = []prometheus.Collector{
 		connsOpened,
 		keyTypes,
@@ -76,6 +94,8 @@ var (
 		dialError,
 		connDuration,
 		connHandshakeLatency,
+		dialsPerPeer,
+		dialRankingDelay,
 	}
 )
 
@@ -83,7 +103,9 @@ type MetricsTracer interface {
 	OpenedConnection(network.Direction, crypto.PubKey, network.ConnectionState, ma.Multiaddr)
 	ClosedConnection(network.Direction, time.Duration, network.ConnectionState, ma.Multiaddr)
 	CompletedHandshake(time.Duration, network.ConnectionState, ma.Multiaddr)
-	FailedDialing(ma.Multiaddr, error)
+	FailedDialing(ma.Multiaddr, network.Conn, error)
+	DialCompleted(totalDials int)
+	DialRankingDelay(d time.Duration)
 }
 
 type metricsTracer struct{}
@@ -185,7 +207,7 @@ func (m *metricsTracer) CompletedHandshake(t time.Duration, cs network.Connectio
 
 var transports = [...]int{ma.P_CIRCUIT, ma.P_WEBRTC, ma.P_WEBTRANSPORT, ma.P_QUIC, ma.P_QUIC_V1, ma.P_WSS, ma.P_WS, ma.P_TCP}
 
-func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, err error) {
+func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, conn network.Conn, err error) {
 	var transport string
 	for _, t := range transports {
 		if _, err := addr.ValueForProtocol(t); err == nil {
@@ -205,11 +227,32 @@ func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, err error) {
 			e = "connection refused"
 		}
 	}
-
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
 
 	*tags = append(*tags, transport, e)
 	*tags = append(*tags, getIPVersion(addr))
+
+	if conn != nil {
+		a := conn.LocalMultiaddr()
+		var transport string
+		for _, t := range transports {
+			if _, err := a.ValueForProtocol(t); err == nil {
+				transport = ma.ProtocolWithCode(t).Name
+			}
+		}
+		*tags = append(*tags, transport)
+	} else {
+		*tags = append(*tags, "<nil>")
+	}
+
 	dialError.WithLabelValues(*tags...).Inc()
+}
+
+func (m *metricsTracer) DialCompleted(numDials int) {
+	dialsPerPeer.Observe(float64(numDials))
+}
+
+func (m *metricsTracer) DialRankingDelay(d time.Duration) {
+	dialRankingDelay.Observe(d.Seconds())
 }
