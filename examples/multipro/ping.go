@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sync"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -19,8 +20,9 @@ const pingResponse = "/ping/pingresp/0.0.1"
 
 // PingProtocol type
 type PingProtocol struct {
-	node     *Node                       // local host
-	requests map[string]*p2p.PingRequest // used to access request data from response handlers
+	node     *Node // local host
+	mu       sync.Mutex
+	requests map[string]*p2p.PingRequest // used to access request data from response handlers. Protected by mu
 	done     chan bool                   // only for demo purposes to stop main from terminating
 }
 
@@ -111,14 +113,17 @@ func (p *PingProtocol) onPingResponse(s network.Stream) {
 	}
 
 	// locate request data and remove it if found
+	p.mu.Lock()
 	_, ok := p.requests[data.MessageData.Id]
 	if ok {
 		// remove request from map as we have processed it here
 		delete(p.requests, data.MessageData.Id)
 	} else {
 		log.Println("Failed to locate request data boject for response")
+		p.mu.Unlock()
 		return
 	}
+	p.mu.Unlock()
 
 	log.Printf("%s: Received ping response from %s. Message id:%s. Message: %s.", s.Conn().LocalPeer(), s.Conn().RemotePeer(), data.MessageData.Id, data.Message)
 	p.done <- true
@@ -142,7 +147,9 @@ func (p *PingProtocol) Ping(host host.Host) bool {
 	req.MessageData.Sign = signature
 
 	// store ref request so response handler has access to it
+	p.mu.Lock()
 	p.requests[req.MessageData.Id] = req
+	p.mu.Unlock()
 
 	ok := p.node.sendProtoMessage(host.ID(), pingRequest, req)
 	if !ok {
