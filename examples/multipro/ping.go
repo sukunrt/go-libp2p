@@ -141,13 +141,14 @@ func (p *PingProtocol) Ping(host host.Host) bool {
 	// add the signature to the message
 	req.MessageData.Sign = signature
 
+	// store ref request so response handler has access to it
+	p.requests[req.MessageData.Id] = req
+
 	ok := p.node.sendProtoMessage(host.ID(), pingRequest, req)
 	if !ok {
 		return false
 	}
 
-	// store ref request so response handler has access to it
-	p.requests[req.MessageData.Id] = req
 	log.Printf("%s: Ping to: %s was sent. Message Id: %s, Message: %s", p.node.ID(), host.ID(), req.MessageData.Id, req.Message)
 	return true
 }
