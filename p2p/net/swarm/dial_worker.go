@@ -68,8 +68,8 @@ type addrDial struct {
 	dialed bool
 	// createdAt is the time this struct was created
 	createdAt time.Time
-	// dialDelay is the delay in dialing this address introduced by the ranking logic
-	dialDelay time.Duration
+	// dialRankingDelay is the delay in dialing this address introduced by the ranking logic
+	dialRankingDelay time.Duration
 }
 
 // dialWorker synchronises concurrent dials to a peer. It ensures that we make at most one dial to a
@@ -292,7 +292,7 @@ loop:
 					continue
 				}
 				ad.dialed = true
-				ad.dialDelay = now.Sub(ad.createdAt)
+				ad.dialRankingDelay = now.Sub(ad.createdAt)
 				err := w.s.dialNextAddr(ad.ctx, w.peer, ad.addr, w.resch)
 				if err != nil {
 					// the actual dial happens in a different go routine. An err here
@@ -343,7 +343,7 @@ loop:
 				ad.requests = nil
 
 				if w.s.metricsTracer != nil {
-					w.s.metricsTracer.TimeToFirstConnection(ad.dialDelay)
+					w.s.metricsTracer.DialRankingDelay(ad.dialRankingDelay)
 				}
 
 				continue loop
