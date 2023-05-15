@@ -301,6 +301,8 @@ loop:
 				} else {
 					// the dial was successful. update inflight dials
 					dialsInFlight++
+					totalDials++
+					log.Errorf("gonnaa dial %s delayed by %s", ad.addr, ad.dialRankingDelay)
 				}
 			}
 			timerRunning = false

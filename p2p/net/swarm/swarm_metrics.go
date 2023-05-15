@@ -50,7 +50,7 @@ var (
 			Name:      "dial_errors_total",
 			Help:      "Dial Error",
 		},
-		[]string{"transport", "error", "ip_version", "conn_transport"},
+		[]string{"transport", "error", "ip_version"},
 	)
 	connDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -103,7 +103,7 @@ type MetricsTracer interface {
 	OpenedConnection(network.Direction, crypto.PubKey, network.ConnectionState, ma.Multiaddr)
 	ClosedConnection(network.Direction, time.Duration, network.ConnectionState, ma.Multiaddr)
 	CompletedHandshake(time.Duration, network.ConnectionState, ma.Multiaddr)
-	FailedDialing(ma.Multiaddr, network.Conn, error)
+	FailedDialing(ma.Multiaddr, error)
 	DialCompleted(totalDials int)
 	DialRankingDelay(d time.Duration)
 }
@@ -207,7 +207,7 @@ func (m *metricsTracer) CompletedHandshake(t time.Duration, cs network.Connectio
 
 var transports = [...]int{ma.P_CIRCUIT, ma.P_WEBRTC, ma.P_WEBTRANSPORT, ma.P_QUIC, ma.P_QUIC_V1, ma.P_WSS, ma.P_WS, ma.P_TCP}
 
-func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, conn network.Conn, err error) {
+func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, err error) {
 	var transport string
 	for _, t := range transports {
 		if _, err := addr.ValueForProtocol(t); err == nil {
@@ -227,30 +227,17 @@ func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, conn network.Conn, err 
 			e = "connection refused"
 		}
 	}
+
 	tags := metricshelper.GetStringSlice()
 	defer metricshelper.PutStringSlice(tags)
 
 	*tags = append(*tags, transport, e)
 	*tags = append(*tags, getIPVersion(addr))
-
-	if conn != nil {
-		a := conn.LocalMultiaddr()
-		var transport string
-		for _, t := range transports {
-			if _, err := a.ValueForProtocol(t); err == nil {
-				transport = ma.ProtocolWithCode(t).Name
-			}
-		}
-		*tags = append(*tags, transport)
-	} else {
-		*tags = append(*tags, "<nil>")
-	}
-
 	dialError.WithLabelValues(*tags...).Inc()
 }
 
-func (m *metricsTracer) DialCompleted(numDials int) {
-	dialsPerPeer.Observe(float64(numDials))
+func (m *metricsTracer) DialCompleted(totalDials int) {
+	dialsPerPeer.Observe(float64(totalDials))
 }
 
 func (m *metricsTracer) DialRankingDelay(d time.Duration) {
