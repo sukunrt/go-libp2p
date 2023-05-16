@@ -148,6 +148,7 @@ func (w *dialWorker) loop() {
 
 	// totalDials is used to track number of dials made by this worker for metrics
 	totalDials := 0
+	var recvaddrs, dialaddrs []ma.Multiaddr
 loop:
 	for {
 		// The loop has three parts
@@ -164,6 +165,13 @@ loop:
 				if w.s.metricsTracer != nil {
 					w.s.metricsTracer.DialCompleted(totalDials)
 				}
+				conns := w.s.ConnsToPeer(w.peer)
+				var raddr string
+				if len(conns) > 0 {
+					raddr = conns[0].RemoteMultiaddr().String()
+				}
+				log.Errorf("dialed %s, received %s, conn %s, time %s", dialaddrs, recvaddrs,
+					raddr, time.Since(startTime))
 				return
 			}
 			// We have received a new request. If we do not have a suitable connection,
@@ -182,7 +190,8 @@ loop:
 				req.resch <- dialResponse{err: err}
 				continue loop
 			}
-
+			recvaddrs = make([]ma.Multiaddr, len(addrs))
+			copy(recvaddrs, addrs)
 			// get the delays to dial these addrs from the swarms dialRanker
 			simConnect, _, _ := network.GetSimultaneousConnect(req.ctx)
 			addrRanking := w.rankAddrs(addrs, simConnect)
@@ -302,7 +311,7 @@ loop:
 					// the dial was successful. update inflight dials
 					dialsInFlight++
 					totalDials++
-					log.Errorf("gonnaa dial %s delayed by %s", ad.addr, ad.dialRankingDelay)
+					dialaddrs = append(dialaddrs, ad.addr)
 				}
 			}
 			timerRunning = false
