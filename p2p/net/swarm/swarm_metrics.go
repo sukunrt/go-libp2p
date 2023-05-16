@@ -12,6 +12,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/metricshelper"
 
 	ma "github.com/multiformats/go-multiaddr"
+	manet "github.com/multiformats/go-multiaddr/net"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -50,7 +51,7 @@ var (
 			Name:      "dial_errors_total",
 			Help:      "Dial Error",
 		},
-		[]string{"transport", "error", "ip_version"},
+		[]string{"transport", "error", "ip_version", "ip_type"},
 	)
 	connDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -234,6 +235,11 @@ func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, err error) {
 
 	*tags = append(*tags, transport, e)
 	*tags = append(*tags, getIPVersion(addr))
+	if manet.IsPrivateAddr(addr) {
+		*tags = append(*tags, "private")
+	} else {
+		*tags = append(*tags, "public")
+	}
 	dialError.WithLabelValues(*tags...).Inc()
 }
 
