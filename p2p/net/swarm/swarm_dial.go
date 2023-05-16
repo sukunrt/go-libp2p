@@ -447,9 +447,20 @@ func (s *Swarm) filterKnownUndialables(p peer.ID, addrs []ma.Multiaddr) []ma.Mul
 		})
 	}
 
+	// Make a map of udp ports we are listening on to filter peers web transport addresses
+	ourLocalHostUDPPorts := make(map[string]bool, 2)
+	for _, a := range ourAddrs {
+		if !manet.IsIPLoopback(a) {
+			continue
+		}
+		if p, err := a.ValueForProtocol(ma.P_UDP); err != nil {
+			ourLocalHostUDPPorts[p] = true
+		}
+	}
+
 	return ma.FilterAddrs(addrs,
 		func(addr ma.Multiaddr) bool { return !ma.Contains(ourAddrs, addr) },
-		func(addr ma.Multiaddr) bool { return !manet.IsIPLoopback(addr) },
+		func(addr ma.Multiaddr) bool { return filterLocalHostUDPAddrs(addr, ourLocalHostUDPPorts) },
 		s.canDial,
 		// TODO: Consider allowing link-local addresses
 		func(addr ma.Multiaddr) bool { return !manet.IsIP6LinkLocal(addr) },
@@ -545,4 +556,14 @@ func isFdConsumingAddr(addr ma.Multiaddr) bool {
 func isRelayAddr(addr ma.Multiaddr) bool {
 	_, err := addr.ValueForProtocol(ma.P_CIRCUIT)
 	return err == nil
+}
+
+func filterLocalHostUDPAddrs(addr ma.Multiaddr, ourUDPPorts map[string]bool) bool {
+	if !manet.IsIPLoopback(addr) {
+		return true
+	}
+	if p, err := addr.ValueForProtocol(ma.P_UDP); err == nil {
+		return !ourUDPPorts[p]
+	}
+	return true
 }
