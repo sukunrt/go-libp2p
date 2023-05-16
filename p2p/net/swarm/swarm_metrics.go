@@ -18,7 +18,6 @@ import (
 )
 
 const metricNamespace = "libp2p_swarm"
-const epsilon = 1e-6
 
 var (
 	connsOpened = prometheus.NewCounterVec(
@@ -76,8 +75,9 @@ var (
 			Namespace: metricNamespace,
 			Name:      "dials_per_peer",
 			Help:      "Number of addresses dialed per peer",
-			// epsilon is needed to avoid counting integral values in the lower bucket.
-			Buckets: prometheus.LinearBuckets(epsilon, 1, 10),
+			// to count histograms with integral values accurately the bucket needs to be
+			// very narrow around the integer value
+			Buckets: []float64{0, 0.99, 1, 1.99, 2, 2.99, 3, 3.99, 4, 4.99, 5},
 		},
 		[]string{"outcome"},
 	)

@@ -148,7 +148,6 @@ func (w *dialWorker) loop() {
 
 	// totalDials is used to track number of dials made by this worker for metrics
 	totalDials := 0
-	var recvaddrs, dialaddrs []ma.Multiaddr
 loop:
 	for {
 		// The loop has three parts
@@ -165,13 +164,6 @@ loop:
 				if w.s.metricsTracer != nil {
 					w.s.metricsTracer.DialCompleted(w.connected, totalDials)
 				}
-				conns := w.s.ConnsToPeer(w.peer)
-				var raddr string
-				if len(conns) > 0 {
-					raddr = conns[0].RemoteMultiaddr().String()
-				}
-				log.Errorf(" %d/%d, dialed %s, received %s, conn %s, time %s", len(dialaddrs), len(recvaddrs),
-					dialaddrs, recvaddrs, raddr, time.Since(startTime))
 				return
 			}
 			// We have received a new request. If we do not have a suitable connection,
@@ -311,7 +303,6 @@ loop:
 					// the dial was successful. update inflight dials
 					dialsInFlight++
 					totalDials++
-					dialaddrs = append(dialaddrs, ad.addr)
 				}
 			}
 			timerRunning = false
