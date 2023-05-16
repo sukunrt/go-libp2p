@@ -182,8 +182,7 @@ loop:
 				req.resch <- dialResponse{err: err}
 				continue loop
 			}
-			recvaddrs = make([]ma.Multiaddr, len(addrs))
-			copy(recvaddrs, addrs)
+
 			// get the delays to dial these addrs from the swarms dialRanker
 			simConnect, _, _ := network.GetSimultaneousConnect(req.ctx)
 			addrRanking := w.rankAddrs(addrs, simConnect)
