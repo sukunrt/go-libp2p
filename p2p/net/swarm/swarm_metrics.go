@@ -70,7 +70,7 @@ var (
 		},
 		[]string{"transport", "security", "muxer", "early_muxer", "ip_version"},
 	)
-	dialsPerPeer = prometheus.NewHistogram(
+	dialsPerPeer = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: metricNamespace,
 			Name:      "dials_per_peer",
@@ -78,6 +78,7 @@ var (
 			// epsilon is needed to avoid counting integral values in the lower bucket.
 			Buckets: prometheus.LinearBuckets(0, 1-epsilon, 10),
 		},
+		[]string{"outcome"},
 	)
 	dialRankingDelay = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
@@ -104,7 +105,7 @@ type MetricsTracer interface {
 	ClosedConnection(network.Direction, time.Duration, network.ConnectionState, ma.Multiaddr)
 	CompletedHandshake(time.Duration, network.ConnectionState, ma.Multiaddr)
 	FailedDialing(ma.Multiaddr, error)
-	DialCompleted(totalDials int)
+	DialCompleted(success bool, totalDials int)
 	DialRankingDelay(d time.Duration)
 }
 
@@ -236,8 +237,15 @@ func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, err error) {
 	dialError.WithLabelValues(*tags...).Inc()
 }
 
-func (m *metricsTracer) DialCompleted(totalDials int) {
-	dialsPerPeer.Observe(float64(totalDials))
+func (m *metricsTracer) DialCompleted(success bool, totalDials int) {
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+	if success {
+		*tags = append(*tags, "success")
+	} else {
+		*tags = append(*tags, "failed")
+	}
+	dialsPerPeer.WithLabelValues(*tags...).Observe(float64(totalDials))
 }
 
 func (m *metricsTracer) DialRankingDelay(d time.Duration) {

@@ -163,15 +163,15 @@ loop:
 		case req, ok := <-w.reqch:
 			if !ok {
 				if w.s.metricsTracer != nil {
-					w.s.metricsTracer.DialCompleted(totalDials)
+					w.s.metricsTracer.DialCompleted(w.connected, totalDials)
 				}
 				conns := w.s.ConnsToPeer(w.peer)
 				var raddr string
 				if len(conns) > 0 {
 					raddr = conns[0].RemoteMultiaddr().String()
 				}
-				log.Errorf("dialed %s, received %s, conn %s, time %s", dialaddrs, recvaddrs,
-					raddr, time.Since(startTime))
+				log.Errorf(" %d/%d, dialed %s, received %s, conn %s, time %s", len(dialaddrs), len(recvaddrs),
+					dialaddrs, recvaddrs, raddr, time.Since(startTime))
 				return
 			}
 			// We have received a new request. If we do not have a suitable connection,
@@ -324,9 +324,6 @@ loop:
 			// On error, record the error
 
 			dialsInFlight--
-			if res.Conn != nil {
-				w.connected = true
-			}
 			ad := w.trackedDials[string(res.Addr.Bytes())]
 
 			if res.Conn != nil {
@@ -353,8 +350,11 @@ loop:
 				ad.conn = conn
 				ad.requests = nil
 
-				if w.s.metricsTracer != nil {
-					w.s.metricsTracer.DialRankingDelay(ad.dialRankingDelay)
+				if !w.connected {
+					w.connected = true
+					if w.s.metricsTracer != nil {
+						w.s.metricsTracer.DialRankingDelay(ad.dialRankingDelay)
+					}
 				}
 
 				continue loop

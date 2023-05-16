@@ -448,11 +448,11 @@ func (s *Swarm) filterKnownUndialables(p peer.ID, addrs []ma.Multiaddr) []ma.Mul
 	}
 
 	return ma.FilterAddrs(addrs,
-		func(addr ma.Multiaddr) bool { return !manet.IsIPLoopback(addr) },
 		func(addr ma.Multiaddr) bool { return !ma.Contains(ourAddrs, addr) },
+		func(addr ma.Multiaddr) bool { return !manet.IsIPLoopback(addr) },
 		s.canDial,
 		// TODO: Consider allowing link-local addresses
-		//func(addr ma.Multiaddr) bool { return !manet.IsIP6LinkLocal(addr) },
+		func(addr ma.Multiaddr) bool { return !manet.IsIP6LinkLocal(addr) },
 		func(addr ma.Multiaddr) bool {
 			return s.gater == nil || s.gater.InterceptAddrDial(p, addr)
 		},
