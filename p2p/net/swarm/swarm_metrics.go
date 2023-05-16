@@ -77,7 +77,7 @@ var (
 			Name:      "dials_per_peer",
 			Help:      "Number of addresses dialed per peer",
 			// epsilon is needed to avoid counting integral values in the lower bucket.
-			Buckets: prometheus.LinearBuckets(0, 1-epsilon, 10),
+			Buckets: prometheus.LinearBuckets(epsilon, 1, 10),
 		},
 		[]string{"outcome"},
 	)
