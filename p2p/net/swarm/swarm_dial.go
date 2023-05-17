@@ -460,7 +460,7 @@ func (s *Swarm) filterKnownUndialables(p peer.ID, addrs []ma.Multiaddr) []ma.Mul
 
 	return ma.FilterAddrs(addrs,
 		func(addr ma.Multiaddr) bool { return !ma.Contains(ourAddrs, addr) },
-		func(addr ma.Multiaddr) bool { return filterLocalHostUDPAddrs(addr, ourLocalHostUDPPorts) },
+		func(addr ma.Multiaddr) bool { return checkLocalHostUDPAddrs(addr, ourLocalHostUDPPorts) },
 		s.canDial,
 		// TODO: Consider allowing link-local addresses
 		func(addr ma.Multiaddr) bool { return !manet.IsIP6LinkLocal(addr) },
@@ -558,7 +558,10 @@ func isRelayAddr(addr ma.Multiaddr) bool {
 	return err == nil
 }
 
-func filterLocalHostUDPAddrs(addr ma.Multiaddr, ourUDPPorts map[string]bool) bool {
+// checkLocalHostUDPAddrs returns false for addresses that have the same localhost port
+// as the one we are listening on
+// This is useful for filtering out peer's localhost webtransport addresses.
+func checkLocalHostUDPAddrs(addr ma.Multiaddr, ourUDPPorts map[string]bool) bool {
 	if !manet.IsIPLoopback(addr) {
 		return true
 	}
