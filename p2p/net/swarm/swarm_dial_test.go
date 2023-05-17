@@ -14,8 +14,11 @@ import (
 	"github.com/libp2p/go-libp2p/core/test"
 	"github.com/libp2p/go-libp2p/p2p/host/eventbus"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
+	quic "github.com/libp2p/go-libp2p/p2p/transport/quic"
+	"github.com/libp2p/go-libp2p/p2p/transport/quicreuse"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	"github.com/libp2p/go-libp2p/p2p/transport/websocket"
+	webtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
 
 	ma "github.com/multiformats/go-multiaddr"
 	madns "github.com/multiformats/go-multiaddr-dns"
@@ -192,4 +195,37 @@ func TestAddrResolutionRecursive(t *testing.T) {
 	addrs2 := s.Peerstore().Addrs(pi2.ID)
 	require.Len(t, addrs2, 1)
 	require.Contains(t, addrs2, addr1)
+}
+
+func TestLocalHostWebTransportRemoved(t *testing.T) {
+	resolver, err := madns.NewResolver()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := newTestSwarmWithResolver(t, resolver)
+	p, err := test.RandPeerID()
+	if err != nil {
+		t.Error(err)
+	}
+	reuse, err := quicreuse.NewConnManager([32]byte{})
+	require.NoError(t, err)
+	defer reuse.Close()
+
+	quicTr, err := quic.NewTransport(s.Peerstore().PrivKey(s.LocalPeer()), reuse, nil, nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, s.AddTransport(quicTr))
+
+	webtransportTr, err := webtransport.New(s.Peerstore().PrivKey(s.LocalPeer()), nil, reuse, nil, nil)
+	require.NoError(t, err)
+	s.AddTransport(webtransportTr)
+
+	err = s.AddListenAddr(ma.StringCast("/ip4/127.0.0.1/udp/10000/quic-v1/"))
+	require.NoError(t, err)
+
+	res := s.filterKnownUndialables(p, []ma.Multiaddr{ma.StringCast("/ip4/127.0.0.1/udp/10000/quic-v1/webtransport")})
+	if len(res) != 0 {
+		t.Errorf("failed to filter localhost webtransport address")
+	}
+	s.Close()
 }

@@ -453,7 +453,7 @@ func (s *Swarm) filterKnownUndialables(p peer.ID, addrs []ma.Multiaddr) []ma.Mul
 		if !manet.IsIPLoopback(a) {
 			continue
 		}
-		if p, err := a.ValueForProtocol(ma.P_UDP); err != nil {
+		if p, err := a.ValueForProtocol(ma.P_UDP); err == nil {
 			ourLocalHostUDPPorts[p] = true
 		}
 	}
