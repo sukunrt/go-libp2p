@@ -10,24 +10,56 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 )
 
-func TestNoDelayRanker(t *testing.T) {
-	addrs := []ma.Multiaddr{
-		ma.StringCast("/ip4/1.2.3.4/tcp/1"),
-		ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1"),
-	}
-	addrDelays := noDelayRanker(addrs)
-	if len(addrs) != len(addrDelays) {
-		t.Errorf("addrDelay should have the same number of elements as addr")
-	}
+func sortAddrDelays(addrDelays []network.AddrDelay) {
+	sort.Slice(addrDelays, func(i, j int) bool {
+		if addrDelays[i].Delay == addrDelays[j].Delay {
+			return addrDelays[i].Addr.String() < addrDelays[j].Addr.String()
+		}
+		return addrDelays[i].Delay < addrDelays[j].Delay
+	})
+}
 
-	for _, a := range addrs {
-		for _, ad := range addrDelays {
-			if a.Equal(ad.Addr) {
-				if ad.Delay != 0 {
-					t.Errorf("expected 0 delay, got %s", ad.Delay)
+func TestNoDelayRanker(t *testing.T) {
+	q1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic")
+	q1v1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1")
+	wt1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1/webtransport/")
+	q2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic")
+	q2v1 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic-v1")
+	q3 := ma.StringCast("/ip4/1.2.3.4/udp/3/quic")
+	q3v1 := ma.StringCast("/ip4/1.2.3.4/udp/3/quic-v1")
+	q4 := ma.StringCast("/ip4/1.2.3.4/udp/4/quic")
+
+	testCase := []struct {
+		name   string
+		addrs  []ma.Multiaddr
+		output []network.AddrDelay
+	}{
+		{
+			name:  "quic+webtransport filtered when quicv1",
+			addrs: []ma.Multiaddr{q1, q2, q3, q4, q1v1, q2v1, q3v1, wt1},
+			output: []network.AddrDelay{
+				{Addr: q1v1, Delay: 0},
+				{Addr: q2v1, Delay: 0},
+				{Addr: q3v1, Delay: 0},
+				{Addr: q4, Delay: 0},
+			},
+		},
+	}
+	for _, tc := range testCase {
+		t.Run(tc.name, func(t *testing.T) {
+			res := noDelayRanker(tc.addrs)
+			if len(res) != len(tc.output) {
+				log.Errorf("expected %s got %s", tc.output, res)
+				t.Errorf("expected elems: %d got: %d", len(tc.output), len(res))
+			}
+			sortAddrDelays(res)
+			sortAddrDelays(tc.output)
+			for i := 0; i < len(tc.output); i++ {
+				if !tc.output[i].Addr.Equal(res[i].Addr) || tc.output[i].Delay != res[i].Delay {
+					t.Fatalf("expected %+v got %+v", tc.output, res)
 				}
 			}
-		}
+		})
 	}
 }
 
@@ -95,26 +127,11 @@ func TestDelayRankerQUICDelay(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			res := defaultDialRanker(tc.addrs)
 			if len(res) != len(tc.output) {
-				for _, a := range res {
-					log.Errorf("%v", a)
-				}
-				for _, a := range tc.output {
-					log.Errorf("%v", a)
-				}
+				log.Errorf("expected %s got %s", tc.output, res)
 				t.Errorf("expected elems: %d got: %d", len(tc.output), len(res))
 			}
-			sort.Slice(res, func(i, j int) bool {
-				if res[i].Delay == res[j].Delay {
-					return res[i].Addr.String() < res[j].Addr.String()
-				}
-				return res[i].Delay < res[j].Delay
-			})
-			sort.Slice(tc.output, func(i, j int) bool {
-				if tc.output[i].Delay == tc.output[j].Delay {
-					return tc.output[i].Addr.String() < tc.output[j].Addr.String()
-				}
-				return tc.output[i].Delay < tc.output[j].Delay
-			})
+			sortAddrDelays(res)
+			sortAddrDelays(tc.output)
 			for i := 0; i < len(tc.output); i++ {
 				if !tc.output[i].Addr.Equal(res[i].Addr) || tc.output[i].Delay != res[i].Delay {
 					t.Fatalf("expected %+v got %+v", tc.output, res)
@@ -169,26 +186,11 @@ func TestDelayRankerTCPDelay(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			res := defaultDialRanker(tc.addrs)
 			if len(res) != len(tc.output) {
-				for _, a := range res {
-					log.Errorf("%v", a)
-				}
-				for _, a := range tc.output {
-					log.Errorf("%v", a)
-				}
+				log.Errorf("expected %s got %s", tc.output, res)
 				t.Errorf("expected elems: %d got: %d", len(tc.output), len(res))
 			}
-			sort.Slice(res, func(i, j int) bool {
-				if res[i].Delay == res[j].Delay {
-					return res[i].Addr.String() < res[j].Addr.String()
-				}
-				return res[i].Delay < res[j].Delay
-			})
-			sort.Slice(tc.output, func(i, j int) bool {
-				if tc.output[i].Delay == tc.output[j].Delay {
-					return tc.output[i].Addr.String() < tc.output[j].Addr.String()
-				}
-				return tc.output[i].Delay < tc.output[j].Delay
-			})
+			sortAddrDelays(res)
+			sortAddrDelays(tc.output)
 			for i := 0; i < len(tc.output); i++ {
 				if !tc.output[i].Addr.Equal(res[i].Addr) || tc.output[i].Delay != res[i].Delay {
 					t.Fatalf("expected %+v got %+v", tc.output, res)
@@ -226,30 +228,14 @@ func TestDelayRankerRelay(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			res := defaultDialRanker(tc.addrs)
 			if len(res) != len(tc.output) {
-				for _, a := range res {
-					log.Errorf("%v", a)
-				}
-				for _, a := range tc.output {
-					log.Errorf("%v", a)
-				}
+				log.Errorf("expected %s got %s", tc.output, res)
 				t.Errorf("expected elems: %d got: %d", len(tc.output), len(res))
 			}
-			sort.Slice(res, func(i, j int) bool {
-				if res[i].Delay == res[j].Delay {
-					return res[i].Addr.String() < res[j].Addr.String()
-				}
-				return res[i].Delay < res[j].Delay
-			})
-			sort.Slice(tc.output, func(i, j int) bool {
-				if tc.output[i].Delay == tc.output[j].Delay {
-					return tc.output[i].Addr.String() < tc.output[j].Addr.String()
-				}
-				return tc.output[i].Delay < tc.output[j].Delay
-			})
-
+			sortAddrDelays(res)
+			sortAddrDelays(tc.output)
 			for i := 0; i < len(tc.output); i++ {
 				if !tc.output[i].Addr.Equal(res[i].Addr) || tc.output[i].Delay != res[i].Delay {
-					t.Errorf("expected %+v got %+v", tc.output[i], res[i])
+					t.Fatalf("expected %+v got %+v", tc.output, res)
 				}
 			}
 		})

@@ -66,6 +66,10 @@ type addrDial struct {
 	requests []int
 	// dialed indicates whether we have triggered the dial to the address
 	dialed bool
+	// createdAt is the time this struct was created
+	createdAt time.Time
+	// dialRankingDelay is the delay in dialing this address introduced by the ranking logic
+	dialRankingDelay time.Duration
 }
 
 // dialWorker synchronises concurrent dials to a peer. It ensures that we make at most one dial to a
@@ -141,6 +145,9 @@ func (w *dialWorker) loop() {
 			timerRunning = true
 		}
 	}
+
+	// totalDials is used to track number of dials made by this worker for metrics
+	totalDials := 0
 loop:
 	for {
 		// The loop has three parts
@@ -154,6 +161,9 @@ loop:
 		select {
 		case req, ok := <-w.reqch:
 			if !ok {
+				if w.s.metricsTracer != nil {
+					w.s.metricsTracer.DialCompleted(w.connected, totalDials)
+				}
 				return
 			}
 			// We have received a new request. If we do not have a suitable connection,
@@ -252,9 +262,15 @@ loop:
 			}
 
 			if len(todial) > 0 {
+				now := time.Now()
 				// these are new addresses, track them and add them to dq
 				for _, a := range todial {
-					w.trackedDials[string(a.Bytes())] = &addrDial{addr: a, ctx: req.ctx, requests: []int{w.reqno}}
+					w.trackedDials[string(a.Bytes())] = &addrDial{
+						addr:      a,
+						ctx:       req.ctx,
+						requests:  []int{w.reqno},
+						createdAt: now,
+					}
 					dq.Add(network.AddrDelay{Addr: a, Delay: addrDelay[string(a.Bytes())]})
 				}
 			}
@@ -267,6 +283,7 @@ loop:
 			// because if the timer triggered before the delay, it means that all
 			// the inflight dials have errored and we should dial the next batch of
 			// addresses
+			now := time.Now()
 			for _, adelay := range dq.NextBatch() {
 				// spawn the dial
 				ad, ok := w.trackedDials[string(adelay.Addr.Bytes())]
@@ -275,6 +292,7 @@ loop:
 					continue
 				}
 				ad.dialed = true
+				ad.dialRankingDelay = now.Sub(ad.createdAt)
 				err := w.s.dialNextAddr(ad.ctx, w.peer, ad.addr, w.resch)
 				if err != nil {
 					// the actual dial happens in a different go routine. An err here
@@ -283,6 +301,7 @@ loop:
 				} else {
 					// the dial was successful. update inflight dials
 					dialsInFlight++
+					totalDials++
 				}
 			}
 			timerRunning = false
@@ -295,9 +314,6 @@ loop:
 			// On error, record the error
 
 			dialsInFlight--
-			if res.Conn != nil {
-				w.connected = true
-			}
 			ad := w.trackedDials[string(res.Addr.Bytes())]
 
 			if res.Conn != nil {
@@ -323,6 +339,13 @@ loop:
 
 				ad.conn = conn
 				ad.requests = nil
+
+				if !w.connected {
+					w.connected = true
+					if w.s.metricsTracer != nil {
+						w.s.metricsTracer.DialRankingDelay(ad.dialRankingDelay)
+					}
+				}
 
 				continue loop
 			}

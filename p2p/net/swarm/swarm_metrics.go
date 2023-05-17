@@ -69,6 +69,25 @@ var (
 		},
 		[]string{"transport", "security", "muxer", "early_muxer", "ip_version"},
 	)
+	dialsPerPeer = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Name:      "dials_per_peer",
+			Help:      "Number of addresses dialed per peer",
+			// to count histograms with integral values accurately the bucket needs to be
+			// very narrow around the integer value
+			Buckets: []float64{0, 0.99, 1, 1.99, 2, 2.99, 3, 3.99, 4, 4.99, 5},
+		},
+		[]string{"outcome"},
+	)
+	dialRankingDelay = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Name:      "dial_ranking_delay_seconds",
+			Help:      "delay introduced by the dial ranking logic",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 1.3, 35),
+		},
+	)
 	collectors = []prometheus.Collector{
 		connsOpened,
 		keyTypes,
@@ -76,6 +95,8 @@ var (
 		dialError,
 		connDuration,
 		connHandshakeLatency,
+		dialsPerPeer,
+		dialRankingDelay,
 	}
 )
 
@@ -84,6 +105,8 @@ type MetricsTracer interface {
 	ClosedConnection(network.Direction, time.Duration, network.ConnectionState, ma.Multiaddr)
 	CompletedHandshake(time.Duration, network.ConnectionState, ma.Multiaddr)
 	FailedDialing(ma.Multiaddr, error)
+	DialCompleted(success bool, totalDials int)
+	DialRankingDelay(d time.Duration)
 }
 
 type metricsTracer struct{}
@@ -212,4 +235,19 @@ func (m *metricsTracer) FailedDialing(addr ma.Multiaddr, err error) {
 	*tags = append(*tags, transport, e)
 	*tags = append(*tags, getIPVersion(addr))
 	dialError.WithLabelValues(*tags...).Inc()
+}
+
+func (m *metricsTracer) DialCompleted(success bool, totalDials int) {
+	tags := metricshelper.GetStringSlice()
+	defer metricshelper.PutStringSlice(tags)
+	if success {
+		*tags = append(*tags, "success")
+	} else {
+		*tags = append(*tags, "failed")
+	}
+	dialsPerPeer.WithLabelValues(*tags...).Observe(float64(totalDials))
+}
+
+func (m *metricsTracer) DialRankingDelay(d time.Duration) {
+	dialRankingDelay.Observe(d.Seconds())
 }

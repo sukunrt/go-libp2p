@@ -27,11 +27,7 @@ const (
 
 // noDelayRanker ranks addresses with no delay. This is useful for simultaneous connect requests.
 func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
-	res := make([]network.AddrDelay, len(addrs))
-	for i, a := range addrs {
-		res[i] = network.AddrDelay{Addr: a, Delay: 0}
-	}
-	return res
+	return getAddrDelay(addrs, 0, 0, 0)
 }
 
 // defaultDialRanker is the default ranking logic.
@@ -200,7 +196,6 @@ func addrPort(a ma.Multiaddr, p int) netip.AddrPort {
 }
 
 func isProtocolAddr(a ma.Multiaddr, p int) bool {
-	// separately handle ip4 and ip6 to avoid allocations
 	found := false
 	ma.ForEach(a, func(c ma.Component) bool {
 		if c.Protocol().Code == p {

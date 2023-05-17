@@ -118,8 +118,7 @@ func makeTCPListener(t *testing.T, a ma.Multiaddr, recvCh chan struct{}) (list m
 	t.Helper()
 	list, err := manet.Listen(a)
 	if err != nil {
-		log.Error(err)
-		t.Error(err)
+		t.Fatal(err)
 	}
 	ch = make(chan struct{})
 	go func() {
