@@ -60,7 +60,6 @@ func New(opts ...Option) (host.Host, error) {
 // choose to add required services at any time and, by using this function, you
 // opt-out of any defaults we may provide.
 func NewWithoutDefaults(opts ...Option) (host.Host, error) {
-	opts = append(opts, NoDelayNetworkDialRanker())
 	var cfg Config
 	if err := cfg.Apply(opts...); err != nil {
 		return nil, err
