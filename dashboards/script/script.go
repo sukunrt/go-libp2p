@@ -4,35 +4,55 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 var selectorRegexp = regexp.MustCompile(`libp2p_(?P<metric>[A-Za-z0-9_]*){(?P<selector>[^}]*)}`)
-var noSelectorRegexp = regexp.MustCompile(`libp2p_(?P<metric>[A-Za-z0-9_]*)[^{]*$`)
+var noSelectorRegexp = regexp.MustCompile(`libp2p_(?P<metric>[A-Za-z0-9_]*)`)
+
+var files = []string{
+	"../swarm/swarm.json",
+	"../autonat/autonat.json",
+	"../autorelay/autorelay.json",
+	"../eventbus/eventbus.json",
+	"../identify/identify.json",
+	"../relaysvc/relaysvc.json",
+	"../resource-manager/resource-manager.json",
+}
 
 func main() {
-	file := os.Args[1]
-	f, err := os.Open(file)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	s := bufio.NewScanner(f)
-	intermediate := []string{}
-	for s.Scan() {
-		line := s.Text()
-		if strings.Contains(line, "regex") {
-			continue
+	for _, file := range files {
+		f, err := os.Open(file)
+		if err != nil {
+			fmt.Println(err)
+			return
 		}
-		intermediate = append(intermediate, transformSelector(line))
+		s := bufio.NewScanner(f)
+		intermediate := []string{}
+		for s.Scan() {
+			line := s.Text()
+			if strings.Contains(line, "regex") {
+				continue
+			}
+			intermediate = append(intermediate, transformSelector(line))
+		}
+		out := strings.Builder{}
+		for _, line := range intermediate {
+			out.WriteString(transformNoSelector(line))
+			out.WriteString("\n")
+		}
+		name := f.Name()
+		_, name = filepath.Split(name)
+		outfile, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, os.ModePerm)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		outfile.Write([]byte(out.String()))
 	}
-	out := strings.Builder{}
-	for _, line := range intermediate {
-		out.WriteString(transformNoSelector(line))
-		out.WriteString("\n")
-	}
-	fmt.Println(out.String())
 }
 
 func transformSelector(line string) string {
@@ -56,6 +76,22 @@ func transformNoSelector(line string) string {
 	matches := noSelectorRegexp.FindAllStringSubmatchIndex(line, -1)
 	i := 0
 	for j := 0; j < len(matches); j++ {
+		end := matches[j][1]
+		found := false
+		for x := end; x < len(line); x++ {
+			if unicode.IsSpace(rune(line[x])) {
+				continue
+			}
+			if line[x] == '{' {
+				found = true
+			} else {
+				found = false
+			}
+			break
+		}
+		if found {
+			continue
+		}
 		metric := line[matches[j][2]:matches[j][3]]
 		out.WriteString(line[i:matches[j][2]])
 		out.WriteString(metric)

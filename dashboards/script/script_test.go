@@ -55,6 +55,11 @@ func TestNoSelectorRegexp(t *testing.T) {
 			in:   `libp2p_hello_world{job="kubo"}[$__interval]`,
 			out:  `libp2p_hello_world{job="kubo"}[$__interval]`,
 		},
+		{
+			name: "multiple",
+			in:   `"sum by (transport) (libp2p_swarm_connections_opened_total) - sum by (transport) (libp2p_swarm_connections_closed_total)",`,
+			out:  `"sum by (transport) (libp2p_swarm_connections_opened_total{instance=~\"$instance\"}) - sum by (transport) (libp2p_swarm_connections_closed_total{instance=~\"$instance\"})",`,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
