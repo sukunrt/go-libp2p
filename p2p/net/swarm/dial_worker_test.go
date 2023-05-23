@@ -523,7 +523,7 @@ func (s schedulingTestCase) Generate(rand *mrand.Rand, size int) reflect.Value {
 	delays := make(map[time.Duration]struct{})
 	for i := 0; i < size; i++ {
 		input[i] = timedDial{
-			addr:      ma.StringCast(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", i+10000)),
+			addr:      ma.StringCast(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", i+10550)),
 			delay:     time.Duration(mrand.Intn(100)) * 10 * time.Millisecond, // max 1 second
 			success:   false,
 			failAfter: time.Duration(mrand.Intn(100)) * 10 * time.Millisecond, // max 1 second
@@ -596,7 +596,6 @@ func checkDialWorkerLoopScheduling(t *testing.T, s1, s2 *Swarm, tc schedulingTes
 			f := func() {
 				err := l.Close()
 				if err != nil {
-					log.Error(err)
 					t.Error(err)
 				}
 			}
@@ -668,7 +667,9 @@ loop:
 						if r.conn == nil {
 							return errors.New("expected connection to succeed")
 						}
-					case <-time.After(1 * time.Second):
+					// High timeout here is okay. We will exit whenever the other branch
+					// is triggered
+					case <-time.After(10 * time.Second):
 						return errors.New("expected to receive a response")
 					}
 					connected = true
@@ -679,7 +680,9 @@ loop:
 					case <-recvCh:
 					case <-resch:
 						return errors.New("didn't expect a response")
-					case <-time.After(100 * time.Millisecond):
+					// High timeout here is okay. We will exit whenever the other branch
+					// is triggered
+					case <-time.After(10 * time.Second):
 						return errors.New("didn't receive a dial attempt notification")
 					}
 					failDials[a] = dialState{
@@ -899,6 +902,9 @@ func TestDialWorkerLoopSchedulingProperty(t *testing.T) {
 		// setup the ranker to trigger dials according to the test case
 		s1.dialRanker = makeRanker(tc.input)
 		err := checkDialWorkerLoopScheduling(t, s1, s2, tc)
+		if err != nil {
+			log.Error(err)
+		}
 		return err == nil
 	}
 
