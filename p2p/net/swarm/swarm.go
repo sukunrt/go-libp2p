@@ -200,7 +200,7 @@ func NewSwarm(local peer.ID, peers peerstore.Peerstore, eventBus event.Bus, opts
 		dialTimeout:      defaultDialTimeout,
 		dialTimeoutLocal: defaultDialTimeoutLocal,
 		maResolver:       madns.DefaultResolver,
-		dialRanker:       defaultDialRanker,
+		dialRanker:       DefaultDialRanker,
 	}
 
 	s.conns.m = make(map[peer.ID][]*Conn)

@@ -575,7 +575,8 @@ func PrometheusRegisterer(reg prometheus.Registerer) Option {
 	}
 }
 
-// NoDelayNetworkDialRanker configures libp2p to not delay any address while dialing
+// NoDelayNetworkDialRanker configures libp2p to disable dial prioritisation and dial
+// all addresses of the peer without any delay
 func NoDelayNetworkDialRanker() Option {
 	return func(cfg *Config) error {
 		cfg.NoDelayNetworkDialRanker = true

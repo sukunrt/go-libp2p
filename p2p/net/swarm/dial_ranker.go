@@ -14,15 +14,15 @@ import (
 // The 250ms value is from happy eyeballs RFC 8305. This is a rough estimate of 1 RTT
 const (
 	// duration by which TCP dials are delayed relative to QUIC dial
-	publicTCPDelay  = 250 * time.Millisecond
-	privateTCPDelay = 30 * time.Millisecond
+	PublicTCPDelay  = 250 * time.Millisecond
+	PrivateTCPDelay = 30 * time.Millisecond
 
 	// duration by which QUIC dials are delayed relative to first QUIC dial
-	publicQUICDelay  = 250 * time.Millisecond
-	privateQUICDelay = 30 * time.Millisecond
+	PublicQUICDelay  = 250 * time.Millisecond
+	PrivateQUICDelay = 30 * time.Millisecond
 
-	// relayDelay is the duration by which relay dials are delayed relative to direct addresses
-	relayDelay = 250 * time.Millisecond
+	// RelayDelay is the duration by which relay dials are delayed relative to direct addresses
+	RelayDelay = 250 * time.Millisecond
 )
 
 // noDelayRanker ranks addresses with no delay. This is useful for simultaneous connect requests.
@@ -30,7 +30,7 @@ func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 	return getAddrDelay(addrs, 0, 0, 0)
 }
 
-// defaultDialRanker is the default ranking logic.
+// DefaultDialRanker is the default ranking logic.
 //
 // We rank private, public ip4, public ip6, relay addresses separately.
 // We do not prefer IPv6 over IPv4 as recommended by Happy Eyeballs RFC 8305. Currently there is no
@@ -58,12 +58,11 @@ func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 //	If a QUIC or webtransport address is present, TCP address dials are delayed by TCPDelay relative to
 //	the last QUIC dial.
 //
-//	TCPDelay for public ip4 and public ip6 is publicTCPDelay
-//	TCPDelay for private addresses is privateTCPDelay
-//	QUICDelay for public addresses is publicQUICDelay
-//	QUICDelay for private addresses is privateQUICDelay
-func defaultDialRanker(addrs []ma.Multiaddr) []network.AddrDelay {
-
+//	TCPDelay for public ip4 and public ip6 is PublicTCPDelay
+//	TCPDelay for private addresses is PrivateTCPDelay
+//	QUICDelay for public addresses is PublicQUICDelay
+//	QUICDelay for private addresses is PrivateQUICDelay
+func DefaultDialRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 	relay, addrs := filterAddrs(addrs, isRelayAddr)
 	pvt, addrs := filterAddrs(addrs, manet.IsPrivateAddr)
 	ip4, addrs := filterAddrs(addrs, func(a ma.Multiaddr) bool { return isProtocolAddr(a, ma.P_IP4) })
@@ -72,17 +71,17 @@ func defaultDialRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 	var relayOffset time.Duration = 0
 	if len(ip4) > 0 || len(ip6) > 0 {
 		// if there is a public direct address available delay relay dials
-		relayOffset = relayDelay
+		relayOffset = RelayDelay
 	}
 
 	res := make([]network.AddrDelay, 0, len(addrs))
 	for i := 0; i < len(addrs); i++ {
 		res = append(res, network.AddrDelay{Addr: addrs[i], Delay: 0})
 	}
-	res = append(res, getAddrDelay(pvt, privateTCPDelay, privateQUICDelay, 0)...)
-	res = append(res, getAddrDelay(ip4, publicTCPDelay, publicQUICDelay, 0)...)
-	res = append(res, getAddrDelay(ip6, publicTCPDelay, publicQUICDelay, 0)...)
-	res = append(res, getAddrDelay(relay, publicTCPDelay, publicQUICDelay, relayOffset)...)
+	res = append(res, getAddrDelay(pvt, PrivateTCPDelay, PrivateQUICDelay, 0)...)
+	res = append(res, getAddrDelay(ip4, PublicTCPDelay, PublicQUICDelay, 0)...)
+	res = append(res, getAddrDelay(ip6, PublicTCPDelay, PublicQUICDelay, 0)...)
+	res = append(res, getAddrDelay(relay, PublicTCPDelay, PublicQUICDelay, relayOffset)...)
 	return res
 }
 

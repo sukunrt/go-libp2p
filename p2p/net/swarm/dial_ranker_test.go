@@ -87,9 +87,9 @@ func TestDelayRankerQUICDelay(t *testing.T) {
 			addrs: []ma.Multiaddr{q1, q2, q3, q4},
 			output: []network.AddrDelay{
 				{Addr: q1, Delay: 0},
-				{Addr: q2, Delay: publicQUICDelay},
-				{Addr: q3, Delay: publicQUICDelay},
-				{Addr: q4, Delay: publicQUICDelay},
+				{Addr: q2, Delay: PublicQUICDelay},
+				{Addr: q3, Delay: PublicQUICDelay},
+				{Addr: q4, Delay: PublicQUICDelay},
 			},
 		},
 		{
@@ -97,9 +97,9 @@ func TestDelayRankerQUICDelay(t *testing.T) {
 			addrs: []ma.Multiaddr{q1, q2v1, q3, q4},
 			output: []network.AddrDelay{
 				{Addr: q2v1, Delay: 0},
-				{Addr: q1, Delay: publicQUICDelay},
-				{Addr: q3, Delay: publicQUICDelay},
-				{Addr: q4, Delay: publicQUICDelay},
+				{Addr: q1, Delay: PublicQUICDelay},
+				{Addr: q3, Delay: PublicQUICDelay},
+				{Addr: q4, Delay: PublicQUICDelay},
 			},
 		},
 		{
@@ -107,9 +107,9 @@ func TestDelayRankerQUICDelay(t *testing.T) {
 			addrs: []ma.Multiaddr{q1, q2, q3, q4, q1v1, q2v1, q3v1, wt1},
 			output: []network.AddrDelay{
 				{Addr: q1v1, Delay: 0},
-				{Addr: q2v1, Delay: publicQUICDelay},
-				{Addr: q3v1, Delay: publicQUICDelay},
-				{Addr: q4, Delay: publicQUICDelay},
+				{Addr: q2v1, Delay: PublicQUICDelay},
+				{Addr: q3v1, Delay: PublicQUICDelay},
+				{Addr: q4, Delay: PublicQUICDelay},
 			},
 		},
 		{
@@ -118,14 +118,14 @@ func TestDelayRankerQUICDelay(t *testing.T) {
 			output: []network.AddrDelay{
 				{Addr: q1, Delay: 0},
 				{Addr: q1v16, Delay: 0},
-				{Addr: q2v16, Delay: publicQUICDelay},
-				{Addr: q3v16, Delay: publicQUICDelay},
+				{Addr: q2v16, Delay: PublicQUICDelay},
+				{Addr: q3v16, Delay: PublicQUICDelay},
 			},
 		},
 	}
 	for _, tc := range testCase {
 		t.Run(tc.name, func(t *testing.T) {
-			res := defaultDialRanker(tc.addrs)
+			res := DefaultDialRanker(tc.addrs)
 			if len(res) != len(tc.output) {
 				log.Errorf("expected %s got %s", tc.output, res)
 				t.Errorf("expected elems: %d got: %d", len(tc.output), len(res))
@@ -159,9 +159,9 @@ func TestDelayRankerTCPDelay(t *testing.T) {
 			addrs: []ma.Multiaddr{q1, q2v1, t1, t2},
 			output: []network.AddrDelay{
 				{Addr: q2v1, Delay: 0},
-				{Addr: q1, Delay: publicQUICDelay},
-				{Addr: t1, Delay: publicQUICDelay + publicTCPDelay},
-				{Addr: t2, Delay: publicQUICDelay + publicTCPDelay},
+				{Addr: q1, Delay: PublicQUICDelay},
+				{Addr: t1, Delay: PublicQUICDelay + PublicTCPDelay},
+				{Addr: t2, Delay: PublicQUICDelay + PublicTCPDelay},
 			},
 		},
 		{
@@ -169,8 +169,8 @@ func TestDelayRankerTCPDelay(t *testing.T) {
 			addrs: []ma.Multiaddr{q1, t1, t2},
 			output: []network.AddrDelay{
 				{Addr: q1, Delay: 0},
-				{Addr: t1, Delay: publicTCPDelay},
-				{Addr: t2, Delay: publicTCPDelay},
+				{Addr: t1, Delay: PublicTCPDelay},
+				{Addr: t2, Delay: PublicTCPDelay},
 			},
 		},
 		{
@@ -184,7 +184,7 @@ func TestDelayRankerTCPDelay(t *testing.T) {
 	}
 	for _, tc := range testCase {
 		t.Run(tc.name, func(t *testing.T) {
-			res := defaultDialRanker(tc.addrs)
+			res := DefaultDialRanker(tc.addrs)
 			if len(res) != len(tc.output) {
 				log.Errorf("expected %s got %s", tc.output, res)
 				t.Errorf("expected elems: %d got: %d", len(tc.output), len(res))
@@ -218,15 +218,15 @@ func TestDelayRankerRelay(t *testing.T) {
 			addrs: []ma.Multiaddr{q1, q2, r1, r2},
 			output: []network.AddrDelay{
 				{Addr: q1, Delay: 0},
-				{Addr: q2, Delay: publicQUICDelay},
-				{Addr: r2, Delay: relayDelay},
-				{Addr: r1, Delay: publicTCPDelay + relayDelay},
+				{Addr: q2, Delay: PublicQUICDelay},
+				{Addr: r2, Delay: RelayDelay},
+				{Addr: r1, Delay: PublicTCPDelay + RelayDelay},
 			},
 		},
 	}
 	for _, tc := range testCase {
 		t.Run(tc.name, func(t *testing.T) {
-			res := defaultDialRanker(tc.addrs)
+			res := DefaultDialRanker(tc.addrs)
 			if len(res) != len(tc.output) {
 				log.Errorf("expected %s got %s", tc.output, res)
 				t.Errorf("expected elems: %d got: %d", len(tc.output), len(res))
