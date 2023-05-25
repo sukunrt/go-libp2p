@@ -1081,3 +1081,37 @@ func TestDialWorkerLoopAddrDedup(t *testing.T) {
 		t.Errorf("expected a fail response")
 	}
 }
+
+func BenchmarkAllocs(b *testing.B) {
+	b.ReportAllocs()
+	t := &testing.T{}
+	s1 := makeSwarm(t)
+	s2 := makeSwarm(t)
+	reqch := make(chan dialRequest, 10)
+	resch := make(chan dialResponse, 10)
+	worker := newDialWorker(s1, s2.LocalPeer(), reqch, nil)
+	go worker.loop()
+	defer worker.wg.Wait()
+	defer close(reqch)
+
+	const N = 10000
+	addrs := make([]ma.Multiaddr, 10000)
+	for i := 0; i < N; i++ {
+		addrs[i] = ma.StringCast(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 10000+i))
+	}
+	for i := 0; i < b.N; i++ {
+		addr := addrs[mrand.Intn(len(addrs))]
+		s1.Peerstore().ClearAddrs(s2.LocalPeer())
+		s1.Peerstore().AddAddr(s2.LocalPeer(), addr, peerstore.PermanentAddrTTL)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		reqch <- dialRequest{
+			ctx:   ctx,
+			resch: resch,
+		}
+		select {
+		case <-resch:
+		case <-ctx.Done():
+		}
+		cancel()
+	}
+}
