@@ -69,16 +69,13 @@ var (
 		},
 		[]string{"transport", "security", "muxer", "early_muxer", "ip_version"},
 	)
-	dialsPerPeer = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
+	dialsPerPeer = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Name:      "dials_per_peer",
+			Name:      "dials_per_peer_total",
 			Help:      "Number of addresses dialed per peer",
-			// to count histograms with integral values accurately the bucket needs to be
-			// very narrow around the integer value
-			Buckets: []float64{0, 0.99, 1, 1.99, 2, 2.99, 3, 3.99, 4, 4.99, 5},
 		},
-		[]string{"outcome"},
+		[]string{"outcome", "num_dials"},
 	)
 	dialRankingDelay = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
@@ -245,7 +242,16 @@ func (m *metricsTracer) DialCompleted(success bool, totalDials int) {
 	} else {
 		*tags = append(*tags, "failed")
 	}
-	dialsPerPeer.WithLabelValues(*tags...).Observe(float64(totalDials))
+
+	numDialLabels := [...]string{"0", "1", "2", "3", "4", "5", ">=6"}
+	var numDials string
+	if totalDials < len(numDialLabels) {
+		numDials = numDialLabels[totalDials]
+	} else {
+		numDials = numDialLabels[len(numDialLabels)-1]
+	}
+	*tags = append(*tags, numDials)
+	dialsPerPeer.WithLabelValues(*tags...).Inc()
 }
 
 func (m *metricsTracer) DialRankingDelay(d time.Duration) {

@@ -136,7 +136,7 @@ func (w *dialWorker) loop() {
 		}
 		timerRunning = false
 		if dq.len() > 0 {
-			if dialsInFlight == 0 {
+			if dialsInFlight == 0 && !w.connected {
 				// if there are no dials in flight, trigger the next dials immediately
 				dialTimer.Reset(startTime)
 			} else {
