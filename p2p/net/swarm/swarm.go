@@ -218,7 +218,9 @@ func NewSwarm(local peer.ID, peers peerstore.Peerstore, eventBus event.Bus, opts
 	}
 
 	s.dsync = newDialSync(s.dialWorkerLoop)
-	s.limiter = newDialLimiter(s.dialAddr)
+	ipv6BHD := newIPv6BlackHoleWrapper()
+	udpBHD := newUDPBlackHoleWrapper()
+	s.limiter = newDialLimiter(udpBHD.Wrap(ipv6BHD.Wrap(s.dialAddr)))
 	s.backf.init(s.ctx)
 	return s, nil
 }

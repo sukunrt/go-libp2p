@@ -47,6 +47,10 @@ type dialLimiter struct {
 
 type dialfunc func(context.Context, peer.ID, ma.Multiaddr) (transport.CapableConn, error)
 
+type dialWrapper interface {
+	Wrap(f dialfunc) dialfunc
+}
+
 func newDialLimiter(df dialfunc) *dialLimiter {
 	fd := ConcurrentFdDials
 	if env := os.Getenv("LIBP2P_SWARM_FD_LIMIT"); env != "" {

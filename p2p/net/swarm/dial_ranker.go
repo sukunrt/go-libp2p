@@ -32,15 +32,14 @@ func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 
 // DefaultDialRanker is the default ranking logic.
 //
-// We rank private, public ip4, public ip6, relay addresses separately.
-// We do not prefer IPv6 over IPv4 as recommended by Happy Eyeballs RFC 8305. Currently there is no
-// mechanism to detect an IPv6 blackhole, so we dial both IPv4 and IPv6 addresses in parallel.
+// We rank private, public direct and relay addresses separately.
+// For a given transport we prefer IPv6 over IPv4 as recommended by Happy Eyeballs RFC 8305.
 // If direct addresses are present we delay all relay addresses by 500 millisecond
-
+//
 // In each group we apply the following logic:
 //
 // First we filter the addresses we don't want to dial. We are filtering these addresses because we
-// have an address that we prefer more than that address and which has the same reachability
+// have an address that we prefer more than the address and which has the same reachability
 //
 //	If a QUIC-v1 address is present we don't dial QUIC or webtransport address on the same (ip,port)
 //	combination. If a QUICDraft29 or webtransport address is reachable, QUIC-v1 will definitely be
@@ -52,9 +51,14 @@ func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 //
 // Then we rank the addresses:
 //
-//	If two QUIC addresses are present, we dial the QUIC address with the lowest port first. This is more
-//	likely to be the listen port. After this we dial the rest of the QUIC addresses delayed by QUICDelay.
-//
+//	If more than one QUIC addresses are present:
+//		If we have both IPv6 and IPv4 addresses, we dial a single QUIC IPv6 address first, then a
+//		single QUIC IPv4 delayed by QUICDelay, then rest of the addresses are dialed delayed by QUICDelay
+//		relative to the IPv4 QUIC dial.
+//		If only IPv6 or IPv4 addresses are present, we dial a single address first followed by the
+//		rest of the addresses delayed by QUICDelay
+//	If no QUIC and only TCP addresses are present, we follow the same approach as dialing multiple QUIC
+//	addresses. In this case the dials are delayed by TCPDelay
 //	If a QUIC or webtransport address is present, TCP address dials are delayed by TCPDelay relative to
 //	the last QUIC dial.
 //
@@ -65,22 +69,20 @@ func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 func DefaultDialRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 	relay, addrs := filterAddrs(addrs, isRelayAddr)
 	pvt, addrs := filterAddrs(addrs, manet.IsPrivateAddr)
-	ip4, addrs := filterAddrs(addrs, func(a ma.Multiaddr) bool { return isProtocolAddr(a, ma.P_IP4) })
-	ip6, addrs := filterAddrs(addrs, func(a ma.Multiaddr) bool { return isProtocolAddr(a, ma.P_IP6) })
-
-	var relayOffset time.Duration = 0
-	if len(ip4) > 0 || len(ip6) > 0 {
-		// if there is a public direct address available delay relay dials
-		relayOffset = RelayDelay
-	}
+	public, addrs := filterAddrs(addrs, func(a ma.Multiaddr) bool { return isProtocolAddr(a, ma.P_IP4) || isProtocolAddr(a, ma.P_IP6) })
 
 	res := make([]network.AddrDelay, 0, len(addrs))
 	for i := 0; i < len(addrs); i++ {
 		res = append(res, network.AddrDelay{Addr: addrs[i], Delay: 0})
 	}
+
+	var relayOffset time.Duration = 0
+	if len(public) > 0 {
+		// if there is a public direct address available delay relay dials
+		relayOffset = RelayDelay
+	}
 	res = append(res, getAddrDelay(pvt, PrivateTCPDelay, PrivateQUICDelay, 0)...)
-	res = append(res, getAddrDelay(ip4, PublicTCPDelay, PublicQUICDelay, 0)...)
-	res = append(res, getAddrDelay(ip6, PublicTCPDelay, PublicQUICDelay, 0)...)
+	res = append(res, getAddrDelay(public, PublicTCPDelay, PublicQUICDelay, 0)...)
 	res = append(res, getAddrDelay(relay, PublicTCPDelay, PublicQUICDelay, relayOffset)...)
 	return res
 }
@@ -131,55 +133,109 @@ func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.D
 	selectedAddrs = selectedAddrs[:i]
 	sort.Slice(selectedAddrs, func(i, j int) bool { return score(selectedAddrs[i]) < score(selectedAddrs[j]) })
 
-	res := make([]network.AddrDelay, 0, len(addrs))
-	quicCount := 0
-	for _, a := range selectedAddrs {
-		delay := offset
-		switch {
-		case isProtocolAddr(a, ma.P_QUIC) || isProtocolAddr(a, ma.P_QUIC_V1):
-			// For QUIC addresses we dial a single address first and then wait for QUICDelay
-			// After QUICDelay we dial rest of the QUIC addresses
-			if quicCount > 0 {
-				delay += quicDelay
+	// Check if the first address is IPv6. If it is IPv6, make the second address IPv4
+	// We ensure that we don't change the transport. So if the first address is (QUIC, IPv6)
+	// The address moved up in ranking has to be (QUIC, IP4) and not (TCP, IPv4)
+	if len(selectedAddrs) > 0 {
+		if isQUICAddr(selectedAddrs[0]) && isProtocolAddr(selectedAddrs[0], ma.P_IP6) {
+			for i := 1; i < len(selectedAddrs); i++ {
+				if isQUICAddr(selectedAddrs[i]) && isProtocolAddr(selectedAddrs[i], ma.P_IP4) {
+					selectedAddrs[i], selectedAddrs[1] = selectedAddrs[1], selectedAddrs[i]
+					break
+				}
 			}
-			quicCount++
-		case isProtocolAddr(a, ma.P_TCP):
-			if quicCount >= 2 {
-				delay += 2 * quicDelay
-			} else if quicCount == 1 {
-				delay += tcpDelay
+		} else if isProtocolAddr(selectedAddrs[0], ma.P_TCP) && isProtocolAddr(selectedAddrs[0], ma.P_IP6) {
+			for i := 1; i < len(selectedAddrs); i++ {
+				if isProtocolAddr(selectedAddrs[i], ma.P_TCP) && isProtocolAddr(selectedAddrs[i], ma.P_IP4) {
+					selectedAddrs[i], selectedAddrs[1] = selectedAddrs[1], selectedAddrs[i]
+					break
+				}
 			}
 		}
-		res = append(res, network.AddrDelay{Addr: a, Delay: delay})
+	}
+
+	res := make([]network.AddrDelay, 0, len(addrs))
+	quicIP6, quicIP4, tcpIP6, tcpIP4 := false, false, false, false
+	// qdelay is used to track the delay for dialing tcp addresses
+	var qdelay time.Duration = 0
+	for i, addr := range selectedAddrs {
+		if i == 0 && isProtocolAddr(addr, ma.P_IP6) && isQUICAddr(addr) {
+			quicIP6 = true
+		}
+		if i == 0 && isProtocolAddr(addr, ma.P_IP6) && isProtocolAddr(addr, ma.P_TCP) {
+			tcpIP6 = true
+		}
+
+		if i == 1 && isProtocolAddr(addr, ma.P_IP4) && isQUICAddr(addr) {
+			quicIP4 = true
+		}
+		if i == 1 && isProtocolAddr(addr, ma.P_IP4) && isProtocolAddr(addr, ma.P_TCP) {
+			tcpIP4 = true
+		}
+
+		var delay time.Duration = 0
+		switch {
+		case isQUICAddr(addr):
+			// For QUIC addresses we dial a single address first and then wait for QUICDelay
+			// After QUICDelay we dial rest of the QUIC addresses
+			if i == 1 {
+				delay = quicDelay
+			}
+			if i > 1 && quicIP6 && quicIP4 {
+				delay = 2 * quicDelay
+			} else if i > 1 {
+				delay = quicDelay
+			}
+			qdelay = delay + tcpDelay
+		case isProtocolAddr(addr, ma.P_TCP):
+			if qdelay == 0 {
+				if i == 1 {
+					delay = tcpDelay
+				}
+				if i > 1 && tcpIP6 && tcpIP4 {
+					delay = 2 * tcpDelay
+				} else if i > 1 {
+					delay = tcpDelay
+				}
+			} else {
+				delay = qdelay
+			}
+		}
+		res = append(res, network.AddrDelay{Addr: addr, Delay: offset + delay})
 	}
 	return res
 }
 
-// score scores a multiaddress for dialing delay. lower is better
+// score scores a multiaddress for dialing delay. Lower is better.
+// The lower 16 bits of the result are the port. Low ports are ranked higher because they're
+// more likely to be listen addresses.
+// The addresses are ranked as:
+// QUICv1 IP6 > QUICdraft29 IP6 > QUICv1 IP4 > QUICdraft29 IP4 > WebTransport IP6 > WebTransport IP4 >
+// TCP IP6 > TCP IP4
 func score(a ma.Multiaddr) int {
-	// the lower 16 bits of the result are the relavant port
-	// the higher bits rank the protocol
-	// low ports are ranked higher because they're more likely to
-	// be listen addresses
+	ip4Weight := 0
+	if isProtocolAddr(a, ma.P_IP4) {
+		ip4Weight = (1 << 18)
+	}
+
 	if _, err := a.ValueForProtocol(ma.P_WEBTRANSPORT); err == nil {
 		p, _ := a.ValueForProtocol(ma.P_UDP)
-		pi, _ := strconv.Atoi(p) // cannot error
-		return pi + (1 << 18)
+		pi, _ := strconv.Atoi(p)
+		return ip4Weight + (1 << 19) + pi
 	}
 	if _, err := a.ValueForProtocol(ma.P_QUIC); err == nil {
 		p, _ := a.ValueForProtocol(ma.P_UDP)
-		pi, _ := strconv.Atoi(p) // cannot error
-		return pi + (1 << 17)
+		pi, _ := strconv.Atoi(p)
+		return ip4Weight + pi + (1 << 17)
 	}
 	if _, err := a.ValueForProtocol(ma.P_QUIC_V1); err == nil {
 		p, _ := a.ValueForProtocol(ma.P_UDP)
-		pi, _ := strconv.Atoi(p) // cannot error
-		return pi
+		pi, _ := strconv.Atoi(p)
+		return ip4Weight + pi
 	}
-
 	if p, err := a.ValueForProtocol(ma.P_TCP); err == nil {
-		pi, _ := strconv.Atoi(p) // cannot error
-		return pi + (1 << 19)
+		pi, _ := strconv.Atoi(p)
+		return ip4Weight + pi + (1 << 20)
 	}
 	return (1 << 30)
 }
@@ -192,6 +248,18 @@ func addrPort(a ma.Multiaddr, p int) netip.AddrPort {
 	pi, _ := strconv.Atoi(port)
 	addr, _ := netip.AddrFromSlice(ip)
 	return netip.AddrPortFrom(addr, uint16(pi))
+}
+
+func isQUICAddr(a ma.Multiaddr) bool {
+	found := false
+	ma.ForEach(a, func(c ma.Component) bool {
+		if c.Protocol().Code == ma.P_QUIC || c.Protocol().Code == ma.P_QUIC_V1 {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 func isProtocolAddr(a ma.Multiaddr, p int) bool {

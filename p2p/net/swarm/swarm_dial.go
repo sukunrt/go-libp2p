@@ -219,6 +219,7 @@ func (db *DialBackoff) cleanup() {
 	}
 }
 
+
 // DialPeer connects to a peer.
 //
 // The idea is that the client of Swarm does not need to know what network
