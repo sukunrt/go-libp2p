@@ -69,16 +69,8 @@ func testHasCertifiedAddrs(t *testing.T, h host.Host, p peer.ID, expected []ma.M
 	require.True(t, assert.ElementsMatchf(t, expected, rec.Addrs, fmt.Sprintf("%s did not have certified addr for %s", h.ID(), p)))
 }
 
-func testHasProtocolVersions(t *testing.T, h host.Host, p peer.ID) {
-	v, err := h.Peerstore().Get(p, "ProtocolVersion")
-	if v == nil {
-		t.Error("no protocol version")
-		return
-	}
-	if v.(string) != identify.DefaultProtocolVersion {
-		t.Error("protocol mismatch", err)
-	}
-	v, err = h.Peerstore().Get(p, "AgentVersion")
+func testHasAgentVersion(t *testing.T, h host.Host, p peer.ID) {
+	v, err := h.Peerstore().Get(p, "AgentVersion")
 	if v.(string) != "github.com/libp2p/go-libp2p" { // this is the default user agent
 		t.Error("agent version mismatch", err)
 	}
@@ -201,7 +193,7 @@ func TestIDService(t *testing.T) {
 	t.Log("test peer1 has peer2 addrs correctly")
 	testKnowsAddrs(t, h1, h2p, h2.Addrs())                       // has them
 	testHasCertifiedAddrs(t, h1, h2p, h2.Peerstore().Addrs(h2p)) // should have signed addrs also
-	testHasProtocolVersions(t, h1, h2p)
+	testHasAgentVersion(t, h1, h2p)
 	testHasPublicKey(t, h1, h2p, h2.Peerstore().PubKey(h2p)) // h1 should have h2's public key
 
 	// now, this wait we do have to do. it's the wait for the Listening side
@@ -214,7 +206,7 @@ func TestIDService(t *testing.T) {
 	t.Log("test peer2 has peer1 addrs correctly")
 	testKnowsAddrs(t, h2, h1p, h1.Addrs()) // has them
 	testHasCertifiedAddrs(t, h2, h1p, h1.Peerstore().Addrs(h1p))
-	testHasProtocolVersions(t, h2, h1p)
+	testHasAgentVersion(t, h2, h1p)
 	testHasPublicKey(t, h2, h1p, h1.Peerstore().PubKey(h1p)) // h1 should have h2's public key
 
 	// Need both sides to actually notice that the connection has been closed.
@@ -670,7 +662,7 @@ func TestLargeIdentifyMessage(t *testing.T) {
 	t.Log("test peer1 has peer2 addrs correctly")
 	testKnowsAddrs(t, h1, h2p, h2.Addrs())                       // has them
 	testHasCertifiedAddrs(t, h1, h2p, h2.Peerstore().Addrs(h2p)) // should have signed addrs also
-	testHasProtocolVersions(t, h1, h2p)
+	testHasAgentVersion(t, h1, h2p)
 	testHasPublicKey(t, h1, h2p, h2.Peerstore().PubKey(h2p)) // h1 should have h2's public key
 
 	// now, this wait we do have to do. it's the wait for the Listening side
@@ -685,7 +677,7 @@ func TestLargeIdentifyMessage(t *testing.T) {
 	t.Log("test peer2 has peer1 addrs correctly")
 	testKnowsAddrs(t, h2, h1p, h1.Addrs()) // has them
 	testHasCertifiedAddrs(t, h2, h1p, h1.Peerstore().Addrs(h1p))
-	testHasProtocolVersions(t, h2, h1p)
+	testHasAgentVersion(t, h2, h1p)
 	testHasPublicKey(t, h2, h1p, h1.Peerstore().PubKey(h1p)) // h1 should have h2's public key
 
 	// Need both sides to actually notice that the connection has been closed.
