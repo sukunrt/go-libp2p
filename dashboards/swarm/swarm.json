@@ -985,7 +985,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2328,7 +2329,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2579,48 +2581,92 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
             }
           },
           "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "<=300ms"
+            },
+            "properties": [
               {
-                "color": "green",
-                "value": null
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
               }
             ]
           },
-          "unit": "s"
-        },
-        "overrides": []
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "<=500ms"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "<=750ms"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "<=100ms"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "<=50ms"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -2630,11 +2676,24 @@
       },
       "id": 38,
       "options": {
+        "displayLabels": [
+          "percent"
+        ],
         "legend": {
-          "calcs": [],
           "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "percent"
+          ]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
         "tooltip": {
           "mode": "single",
@@ -2648,8 +2707,8 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.5, sum(rate(libp2p_swarm_dial_ranking_delay_seconds_bucket[$__rate_interval])) by (le))",
-          "legendFormat": "50th percentile",
+          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.001\"}[$__range]))",
+          "legendFormat": "<= 1ms",
           "range": true,
           "refId": "A"
         },
@@ -2659,9 +2718,9 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.9, sum(rate(libp2p_swarm_dial_ranking_delay_seconds_bucket[$__rate_interval])) by (le))",
+          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.05\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.001\"}[$__range]))",
           "hide": false,
-          "legendFormat": "90th percentile",
+          "legendFormat": "<=50ms",
           "range": true,
           "refId": "B"
         },
@@ -2671,15 +2730,63 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(libp2p_swarm_dial_ranking_delay_seconds_bucket[$__rate_interval])) by (le))",
+          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.1\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.05\"}[$__range]))",
           "hide": false,
-          "legendFormat": "95th percentile",
+          "legendFormat": "<=100ms",
           "range": true,
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.3\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.1\"}[$__range]))",
+          "hide": false,
+          "legendFormat": "<=300ms",
+          "range": true,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.5\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.3\"}[$__range]))",
+          "hide": false,
+          "legendFormat": "<=500ms",
+          "range": true,
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.75\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.5\"}[$__range]))",
+          "hide": false,
+          "legendFormat": "<=750ms",
+          "range": true,
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"inf\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.75\"}[$__range]))",
+          "hide": false,
+          "legendFormat": ">750ms",
+          "range": true,
+          "refId": "H"
         }
       ],
       "title": "Dial Ranking Delay",
-      "type": "timeseries"
+      "type": "piechart"
     },
     {
       "datasource": {
@@ -2740,7 +2847,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "yellow",
+                  "fixedColor": "purple",
                   "mode": "fixed"
                 }
               }
@@ -2801,12 +2908,19 @@
       },
       "id": 42,
       "options": {
+        "displayLabels": [
+          "percent",
+          "name"
+        ],
         "legend": {
           "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "percent"
+          ]
         },
-        "pieType": "pie",
+        "pieType": "donut",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -2938,13 +3052,13 @@
     ]
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "libp2p Swarm",
   "uid": "a15PyhO4z",
-  "version": 7,
+  "version": 12,
   "weekStart": ""
 }
