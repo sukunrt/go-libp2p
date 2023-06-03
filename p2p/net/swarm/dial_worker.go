@@ -314,7 +314,14 @@ loop:
 			// On error, record the error
 
 			dialsInFlight--
-			ad := w.trackedDials[string(res.Addr.Bytes())]
+			ad, ok := w.trackedDials[string(res.Addr.Bytes())]
+			if !ok {
+				log.Errorf("SWARM BUG: no entry for address %s in trackedDials", res.Addr)
+				if res.Conn != nil {
+					res.Conn.Close()
+				}
+				continue
+			}
 
 			if res.Conn != nil {
 				// we got a connection, add it to the swarm
