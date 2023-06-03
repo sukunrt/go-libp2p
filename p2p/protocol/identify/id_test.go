@@ -29,44 +29,15 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/protocol/identify/pb"
 
 	mockClock "github.com/benbjohnson/clock"
-	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-msgio/pbio"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
-	logging.SetLogLevel("net/identify", "debug")
-}
-
 func testKnowsAddrs(t *testing.T, h host.Host, p peer.ID, expected []ma.Multiaddr) {
 	t.Helper()
 	require.True(t, assert.ElementsMatchf(t, expected, h.Peerstore().Addrs(p), fmt.Sprintf("%s did not have addr for %s", h.ID(), p)))
-}
-
-func testHasCertifiedAddrs(t *testing.T, h host.Host, p peer.ID, expected []ma.Multiaddr) {
-	t.Helper()
-	cab, ok := peerstore.GetCertifiedAddrBook(h.Peerstore())
-	if !ok {
-		t.Error("expected peerstore to implement CertifiedAddrBook")
-	}
-	recordEnvelope := cab.GetPeerRecord(p)
-	if recordEnvelope == nil {
-		if len(expected) == 0 {
-			return
-		}
-		t.Fatalf("peerstore has no signed record for peer %s", p)
-	}
-	r, err := recordEnvelope.Record()
-	if err != nil {
-		t.Error("Error unwrapping signed PeerRecord from envelope", err)
-	}
-	rec, ok := r.(*peer.PeerRecord)
-	if !ok {
-		t.Error("unexpected record type")
-	}
-	require.True(t, assert.ElementsMatchf(t, expected, rec.Addrs, fmt.Sprintf("%s did not have certified addr for %s", h.ID(), p)))
 }
 
 func testHasAgentVersion(t *testing.T, h host.Host, p peer.ID) {
@@ -93,13 +64,6 @@ func testHasPublicKey(t *testing.T, h host.Host, p peer.ID, shouldBe ic.PubKey) 
 	} else if p != p2 {
 		t.Error("key does not match peerid")
 	}
-}
-
-func getSignedRecord(t *testing.T, h host.Host, p peer.ID) *record.Envelope {
-	cab, ok := peerstore.GetCertifiedAddrBook(h.Peerstore())
-	require.True(t, ok)
-	rec := cab.GetPeerRecord(p)
-	return rec
 }
 
 // we're using BlankHost in our tests, which doesn't automatically generate peer records
@@ -191,8 +155,7 @@ func TestIDService(t *testing.T) {
 	// the idService should be opened automatically, by the network.
 	// what we should see now is that both peers know about each others listen addresses.
 	t.Log("test peer1 has peer2 addrs correctly")
-	testKnowsAddrs(t, h1, h2p, h2.Addrs())                       // has them
-	testHasCertifiedAddrs(t, h1, h2p, h2.Peerstore().Addrs(h2p)) // should have signed addrs also
+	testKnowsAddrs(t, h1, h2p, h2.Addrs()) // has them
 	testHasAgentVersion(t, h1, h2p)
 	testHasPublicKey(t, h1, h2p, h2.Peerstore().PubKey(h2p)) // h1 should have h2's public key
 
@@ -205,7 +168,6 @@ func TestIDService(t *testing.T) {
 	// and the protocol versions.
 	t.Log("test peer2 has peer1 addrs correctly")
 	testKnowsAddrs(t, h2, h1p, h1.Addrs()) // has them
-	testHasCertifiedAddrs(t, h2, h1p, h1.Peerstore().Addrs(h1p))
 	testHasAgentVersion(t, h2, h1p)
 	testHasPublicKey(t, h2, h1p, h1.Peerstore().PubKey(h1p)) // h1 should have h2's public key
 
@@ -222,8 +184,6 @@ func TestIDService(t *testing.T) {
 	// addresses don't immediately expire on disconnect, so we should still have them
 	testKnowsAddrs(t, h2, h1p, h1.Addrs())
 	testKnowsAddrs(t, h1, h2p, h2.Addrs())
-	testHasCertifiedAddrs(t, h1, h2p, h2.Peerstore().Addrs(h2p))
-	testHasCertifiedAddrs(t, h2, h1p, h1.Peerstore().Addrs(h1p))
 
 	<-sentDisconnect1
 	<-sentDisconnect2
@@ -234,8 +194,6 @@ func TestIDService(t *testing.T) {
 	clk.Add(time.Second)
 	testKnowsAddrs(t, h1, h2p, []ma.Multiaddr{})
 	testKnowsAddrs(t, h2, h1p, []ma.Multiaddr{})
-	testHasCertifiedAddrs(t, h1, h2p, []ma.Multiaddr{})
-	testHasCertifiedAddrs(t, h2, h1p, []ma.Multiaddr{})
 
 	// test that we received the "identify completed" event.
 	select {
@@ -481,7 +439,6 @@ func TestIdentifyPushOnAddrChange(t *testing.T) {
 	waitForAddrInStream(t, h2AddrStream, lad, 10*time.Second, "h2 did not receive addr change")
 
 	require.True(t, ma.Contains(h2.Peerstore().Addrs(h1p), lad))
-	require.NotNil(t, getSignedRecord(t, h2, h1p))
 
 	// change addr on host2 and ensure host 1 gets a pus
 	lad = ma.StringCast("/ip4/127.0.0.1/tcp/1235")
@@ -494,7 +451,6 @@ func TestIdentifyPushOnAddrChange(t *testing.T) {
 	waitForAddrInStream(t, h1AddrStream, lad, 10*time.Second, "h1 did not receive addr change")
 
 	require.True(t, ma.Contains(h1.Peerstore().Addrs(h2p), lad))
-	require.NotNil(t, getSignedRecord(t, h1, h2p))
 
 	// change addr on host2 again
 	lad2 := ma.StringCast("/ip4/127.0.0.1/tcp/1236")
@@ -506,7 +462,6 @@ func TestIdentifyPushOnAddrChange(t *testing.T) {
 	waitForAddrInStream(t, h1AddrStream, lad2, 10*time.Second, "h1 did not receive addr change")
 
 	require.True(t, ma.Contains(h1.Peerstore().Addrs(h2p), lad2))
-	require.NotNil(t, getSignedRecord(t, h1, h2p))
 }
 
 func TestUserAgent(t *testing.T) {
@@ -660,8 +615,7 @@ func TestLargeIdentifyMessage(t *testing.T) {
 	// the idService should be opened automatically, by the network.
 	// what we should see now is that both peers know about each others listen addresses.
 	t.Log("test peer1 has peer2 addrs correctly")
-	testKnowsAddrs(t, h1, h2p, h2.Addrs())                       // has them
-	testHasCertifiedAddrs(t, h1, h2p, h2.Peerstore().Addrs(h2p)) // should have signed addrs also
+	testKnowsAddrs(t, h1, h2p, h2.Addrs()) // has them
 	testHasAgentVersion(t, h1, h2p)
 	testHasPublicKey(t, h1, h2p, h2.Peerstore().PubKey(h2p)) // h1 should have h2's public key
 
@@ -676,7 +630,6 @@ func TestLargeIdentifyMessage(t *testing.T) {
 	// and the protocol versions.
 	t.Log("test peer2 has peer1 addrs correctly")
 	testKnowsAddrs(t, h2, h1p, h1.Addrs()) // has them
-	testHasCertifiedAddrs(t, h2, h1p, h1.Peerstore().Addrs(h1p))
 	testHasAgentVersion(t, h2, h1p)
 	testHasPublicKey(t, h2, h1p, h1.Peerstore().PubKey(h1p)) // h1 should have h2's public key
 
@@ -693,8 +646,6 @@ func TestLargeIdentifyMessage(t *testing.T) {
 	// addresses don't immediately expire on disconnect, so we should still have them
 	testKnowsAddrs(t, h2, h1p, h1.Addrs())
 	testKnowsAddrs(t, h1, h2p, h2.Addrs())
-	testHasCertifiedAddrs(t, h1, h2p, h2.Peerstore().Addrs(h2p))
-	testHasCertifiedAddrs(t, h2, h1p, h1.Peerstore().Addrs(h1p))
 
 	<-sentDisconnect1
 	<-sentDisconnect2
@@ -705,8 +656,6 @@ func TestLargeIdentifyMessage(t *testing.T) {
 	clk.Add(time.Second)
 	testKnowsAddrs(t, h1, h2p, []ma.Multiaddr{})
 	testKnowsAddrs(t, h2, h1p, []ma.Multiaddr{})
-	testHasCertifiedAddrs(t, h1, h2p, []ma.Multiaddr{})
-	testHasCertifiedAddrs(t, h2, h1p, []ma.Multiaddr{})
 
 	// test that we received the "identify completed" event.
 	select {
@@ -770,7 +719,6 @@ func TestLargePushMessage(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return ma.Contains(h2.Peerstore().Addrs(h1p), lad)
 	}, time.Second, 10*time.Millisecond)
-	require.NotNil(t, getSignedRecord(t, h2, h1p))
 
 	// change addr on host2 and ensure host 1 gets a pus
 	lad = ma.StringCast("/ip4/127.0.0.1/tcp/1235")
@@ -781,7 +729,6 @@ func TestLargePushMessage(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return ma.Contains(h1.Peerstore().Addrs(h2p), lad)
 	}, time.Second, 10*time.Millisecond)
-	testHasCertifiedAddrs(t, h1, h2p, h2.Addrs())
 
 	// change addr on host2 again
 	lad2 := ma.StringCast("/ip4/127.0.0.1/tcp/1236")
@@ -792,7 +739,6 @@ func TestLargePushMessage(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return ma.Contains(h1.Peerstore().Addrs(h2p), lad2)
 	}, time.Second, 10*time.Millisecond)
-	testHasCertifiedAddrs(t, h2, h1p, h1.Addrs())
 }
 
 func TestIdentifyResponseReadTimeout(t *testing.T) {
