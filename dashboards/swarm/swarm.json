@@ -2588,7 +2588,7 @@
             }
           },
           "mappings": [],
-          "unit": "s"
+          "unit": "none"
         },
         "overrides": [
           {
@@ -2639,13 +2639,13 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "<=100ms"
+              "options": "<=50ms"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "blue",
+                  "fixedColor": "dark-blue",
                   "mode": "fixed"
                 }
               }
@@ -2654,13 +2654,13 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "<=50ms"
+              "options": "<=10ms"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "dark-blue",
+                  "fixedColor": "blue",
                   "mode": "fixed"
                 }
               }
@@ -2680,7 +2680,7 @@
           "percent"
         ],
         "legend": {
-          "displayMode": "list",
+          "displayMode": "table",
           "placement": "right",
           "showLegend": true,
           "values": [
@@ -2707,8 +2707,11 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
+          "exemplar": false,
           "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.001\"}[$__range]))",
-          "legendFormat": "<= 1ms",
+          "format": "time_series",
+          "instant": false,
+          "legendFormat": "No delay",
           "range": true,
           "refId": "A"
         },
@@ -2718,9 +2721,11 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.05\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.001\"}[$__range]))",
+          "exemplar": false,
+          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.01\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.001\"}[$__range]))",
           "hide": false,
-          "legendFormat": "<=50ms",
+          "instant": false,
+          "legendFormat": "<=10ms",
           "range": true,
           "refId": "B"
         },
@@ -2730,11 +2735,11 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.1\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.05\"}[$__range]))",
+          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.05\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.01\"}[$__range]))",
           "hide": false,
-          "legendFormat": "<=100ms",
+          "legendFormat": "<=50ms",
           "range": true,
-          "refId": "C"
+          "refId": "F"
         },
         {
           "datasource": {
@@ -2742,7 +2747,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.3\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.1\"}[$__range]))",
+          "expr": "sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.3\"}[$__range])) - ignoring(le) sum(increase(libp2p_swarm_dial_ranking_delay_seconds_bucket{instance=~\"$instance\",le=\"0.05\"}[$__range]))",
           "hide": false,
           "legendFormat": "<=300ms",
           "range": true,
@@ -2786,6 +2791,7 @@
         }
       ],
       "title": "Dial Ranking Delay",
+      "transformations": [],
       "type": "piechart"
     },
     {
@@ -2913,7 +2919,7 @@
           "name"
         ],
         "legend": {
-          "displayMode": "list",
+          "displayMode": "table",
           "placement": "right",
           "showLegend": true,
           "values": [
@@ -3059,6 +3065,6 @@
   "timezone": "",
   "title": "libp2p Swarm",
   "uid": "a15PyhO4z",
-  "version": 12,
+  "version": 6,
   "weekStart": ""
 }
