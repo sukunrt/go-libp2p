@@ -1,9 +1,11 @@
 package swarm
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"net"
+	"sort"
 	"testing"
 	"time"
 
@@ -14,11 +16,12 @@ import (
 	"github.com/libp2p/go-libp2p/core/test"
 	"github.com/libp2p/go-libp2p/p2p/host/eventbus"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
-	quic "github.com/libp2p/go-libp2p/p2p/transport/quic"
+	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 	"github.com/libp2p/go-libp2p/p2p/transport/quicreuse"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	"github.com/libp2p/go-libp2p/p2p/transport/websocket"
-	webtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
+	libp2pwebtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
+	"github.com/quic-go/quic-go"
 
 	ma "github.com/multiformats/go-multiaddr"
 	madns "github.com/multiformats/go-multiaddr-dns"
@@ -135,6 +138,23 @@ func newTestSwarmWithResolver(t *testing.T, resolver *madns.Resolver) *Swarm {
 	err = s.AddTransport(tpt)
 	require.NoError(t, err)
 
+	connmgr, err := quicreuse.NewConnManager(quic.StatelessResetKey{})
+	require.NoError(t, err)
+	quicTpt, err := libp2pquic.NewTransport(priv, connmgr, nil, nil, &network.NullResourceManager{})
+	require.NoError(t, err)
+	err = s.AddTransport(quicTpt)
+	require.NoError(t, err)
+
+	wtTpt, err := libp2pwebtransport.New(priv, nil, connmgr, nil, &network.NullResourceManager{})
+	require.NoError(t, err)
+	err = s.AddTransport(wtTpt)
+	require.NoError(t, err)
+
+	wsTpt, err := websocket.New(nil, &network.NullResourceManager{})
+	require.NoError(t, err)
+	err = s.AddTransport(wsTpt)
+	require.NoError(t, err)
+
 	return s
 }
 
@@ -242,35 +262,71 @@ func TestAddrResolutionRecursive(t *testing.T) {
 	require.Contains(t, addrs2, addr1)
 }
 
-func TestLocalHostWebTransportRemoved(t *testing.T) {
-	resolver, err := madns.NewResolver()
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestAddrsForDialFiltering(t *testing.T) {
+	q1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic")
+	q1v1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1")
+	wt1 := ma.StringCast("/ip4/1.2.3.4/udp/1/quic-v1/webtransport/")
 
+	q2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic")
+	q2v1 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic-v1")
+	wt2 := ma.StringCast("/ip4/1.2.3.4/udp/2/quic-v1/webtransport/")
+
+	q3 := ma.StringCast("/ip4/1.2.3.4/udp/3/quic")
+
+	t1 := ma.StringCast("/ip4/1.2.3.4/tcp/1")
+	ws1 := ma.StringCast("/ip4/1.2.3.4/tcp/1/ws")
+
+	resolver, err := madns.NewResolver(madns.WithDefaultResolver(&madns.MockResolver{}))
+	require.NoError(t, err)
 	s := newTestSwarmWithResolver(t, resolver)
-	p, err := test.RandPeerID()
-	if err != nil {
-		t.Error(err)
+	ourAddrs := s.ListenAddresses()
+
+	testCases := []struct {
+		name   string
+		input  []ma.Multiaddr
+		output []ma.Multiaddr
+	}{
+		{
+			name:   "quic-filtered",
+			input:  []ma.Multiaddr{q1, q1v1, q2, q2v1, q3},
+			output: []ma.Multiaddr{q1v1, q2v1, q3},
+		},
+		{
+			name:   "webtransport-filtered",
+			input:  []ma.Multiaddr{q1, q1v1, wt1, wt2},
+			output: []ma.Multiaddr{q1v1, wt2},
+		},
+		{
+			name:   "all",
+			input:  []ma.Multiaddr{q1, q1v1, wt1, q2, q2v1, wt2, t1, ws1},
+			output: []ma.Multiaddr{q1v1, q2v1, t1},
+		},
+		{
+			name:   "our-addrs-filtered",
+			input:  append([]ma.Multiaddr{q1}, ourAddrs...),
+			output: []ma.Multiaddr{q1},
+		},
 	}
-	reuse, err := quicreuse.NewConnManager([32]byte{})
-	require.NoError(t, err)
-	defer reuse.Close()
 
-	quicTr, err := quic.NewTransport(s.Peerstore().PrivKey(s.LocalPeer()), reuse, nil, nil, nil)
-	require.NoError(t, err)
-	require.NoError(t, s.AddTransport(quicTr))
+	ctx := context.Background()
+	p1 := test.RandPeerIDFatal(t)
 
-	webtransportTr, err := webtransport.New(s.Peerstore().PrivKey(s.LocalPeer()), nil, reuse, nil, nil)
-	require.NoError(t, err)
-	s.AddTransport(webtransportTr)
-
-	err = s.AddListenAddr(ma.StringCast("/ip4/127.0.0.1/udp/10000/quic-v1/"))
-	require.NoError(t, err)
-
-	res := s.filterKnownUndialables(p, []ma.Multiaddr{ma.StringCast("/ip4/127.0.0.1/udp/10000/quic-v1/webtransport")})
-	if len(res) != 0 {
-		t.Errorf("failed to filter localhost webtransport address")
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s.Peerstore().ClearAddrs(p1)
+			s.Peerstore().AddAddrs(p1, tc.input, peerstore.PermanentAddrTTL)
+			result, err := s.addrsForDial(ctx, p1)
+			require.NoError(t, err)
+			sort.Slice(result, func(i, j int) bool { return bytes.Compare(result[i].Bytes(), result[j].Bytes()) < 0 })
+			sort.Slice(tc.output, func(i, j int) bool { return bytes.Compare(tc.output[i].Bytes(), tc.output[j].Bytes()) < 0 })
+			if len(result) != len(tc.output) {
+				t.Fatalf("output mismatch got: %s want: %s", result, tc.output)
+			}
+			for i := 0; i < len(result); i++ {
+				if !result[i].Equal(tc.output[i]) {
+					t.Fatalf("output mismatch got: %s want: %s", result, tc.output)
+				}
+			}
+		})
 	}
-	s.Close()
 }

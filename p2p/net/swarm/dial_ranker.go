@@ -1,7 +1,6 @@
 package swarm
 
 import (
-	"net/netip"
 	"sort"
 	"strconv"
 	"time"
@@ -53,16 +52,8 @@ func noDelayRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 // The correct solution is to detect this situation, and not attempt to dial IPv6 addresses at all.
 // IPv6 blackhole detection is tracked in https://github.com/libp2p/go-libp2p/issues/1605.
 //
-// Within each group (private, public IPv4, public IPv6, relay addresses) we apply the following logic:
-//
-// 1. Filter out addresses we don't want to dial:
-//  1. If a /quic-v1 address is present, filter out /quic and /webtransport address on the same 2-tuple:
-//     QUIC v1 is preferred over the deprecated QUIC draft-29, and given the choice, we prefer using
-//     raw QUIC over using WebTransport.
-//  2. If a /tcp address is present, filter out /ws or /wss addresses on the same 2-tuple:
-//     We prefer using raw TCP over using WebSocket.
-//
-// 2. Rank addresses:
+// Within each group (private, public IPv4, public IPv6, relay addresses) we apply the following
+// ranking logic:
 //
 //  1. If two QUIC addresses are present,  dial the QUIC address with the lowest port first:
 //     This is more likely to be the listen port. After this we dial the rest of the QUIC addresses delayed by
@@ -99,49 +90,11 @@ func DefaultDialRanker(addrs []ma.Multiaddr) []network.AddrDelay {
 // addresses relative to direct addresses
 func getAddrDelay(addrs []ma.Multiaddr, tcpDelay time.Duration, quicDelay time.Duration,
 	offset time.Duration) []network.AddrDelay {
-
-	// First make a map of QUICV1 and TCP AddrPorts.
-	quicV1Addr := make(map[netip.AddrPort]struct{})
-	tcpAddr := make(map[netip.AddrPort]struct{})
-	for _, a := range addrs {
-		switch {
-		case isProtocolAddr(a, ma.P_WEBTRANSPORT):
-		case isProtocolAddr(a, ma.P_QUIC_V1):
-			quicV1Addr[addrPort(a, ma.P_UDP)] = struct{}{}
-		case isProtocolAddr(a, ma.P_WS) || isProtocolAddr(a, ma.P_WSS):
-		case isProtocolAddr(a, ma.P_TCP):
-			tcpAddr[addrPort(a, ma.P_TCP)] = struct{}{}
-		}
-	}
-
-	// Filter addresses we are sure we don't want to dial
-	selectedAddrs := addrs
-	i := 0
-	for _, a := range addrs {
-		switch {
-		// If a QUICDraft29 or webtransport address is reachable, QUIC-v1 will also be reachable. So we
-		// drop the QUICDraft29 or webtransport address
-		// We prefer QUIC-v1 over the older QUIC-draft29 address.
-		// We prefer QUIC-v1 over webtransport as it is more performant.
-		case isProtocolAddr(a, ma.P_WEBTRANSPORT) || isProtocolAddr(a, ma.P_QUIC):
-			if _, ok := quicV1Addr[addrPort(a, ma.P_UDP)]; ok {
-				continue
-			}
-		// If a ws address is reachable, TCP will also be reachable and it'll be more performant
-		case isProtocolAddr(a, ma.P_WS) || isProtocolAddr(a, ma.P_WSS):
-			if _, ok := tcpAddr[addrPort(a, ma.P_TCP)]; ok {
-				continue
-			}
-		}
-		selectedAddrs[i] = a
-		i++
-	}
-	selectedAddrs = selectedAddrs[:i]
-	sort.Slice(selectedAddrs, func(i, j int) bool { return score(selectedAddrs[i]) < score(selectedAddrs[j]) })
+	sort.Slice(addrs, func(i, j int) bool { return score(addrs[i]) < score(addrs[j]) })
 
 	res := make([]network.AddrDelay, 0, len(addrs))
 	quicCount := 0
-	for _, a := range selectedAddrs {
+	for _, a := range addrs {
 		delay := offset
 		switch {
 		case isProtocolAddr(a, ma.P_QUIC) || isProtocolAddr(a, ma.P_QUIC_V1):
@@ -190,16 +143,6 @@ func score(a ma.Multiaddr) int {
 		return pi + (1 << 19)
 	}
 	return (1 << 30)
-}
-
-// addrPort returns the ip and port for a. p should be either ma.P_TCP or ma.P_UDP.
-// a must be an (ip, TCP) or (ip, udp) address.
-func addrPort(a ma.Multiaddr, p int) netip.AddrPort {
-	ip, _ := manet.ToIP(a)
-	port, _ := a.ValueForProtocol(p)
-	pi, _ := strconv.Atoi(port)
-	addr, _ := netip.AddrFromSlice(ip)
-	return netip.AddrPortFrom(addr, uint16(pi))
 }
 
 func isProtocolAddr(a ma.Multiaddr, p int) bool {

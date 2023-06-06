@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
+	"strconv"
 	"sync"
 	"time"
 
@@ -433,8 +435,9 @@ func (s *Swarm) nonProxyAddr(addr ma.Multiaddr) bool {
 // filterKnownUndialables takes a list of multiaddrs, and removes those
 // that we definitely don't want to dial: addresses configured to be blocked,
 // IPv6 link-local addresses, addresses without a dial-capable transport,
-// and addresses that we know to be our own.
-// This is an optimization to avoid wasting time on dials that we know are going to fail.
+// addresses that we know to be our own, and addresses with a better tranport
+// available. This is an optimization to avoid wasting time on dials that we
+// know are going to fail or for which we have a better alternative.
 func (s *Swarm) filterKnownUndialables(p peer.ID, addrs []ma.Multiaddr) []ma.Multiaddr {
 	lisAddrs, _ := s.InterfaceListenAddresses()
 	var ourAddrs []ma.Multiaddr
@@ -448,21 +451,17 @@ func (s *Swarm) filterKnownUndialables(p peer.ID, addrs []ma.Multiaddr) []ma.Mul
 		})
 	}
 
-	// Make a map of udp ports we are listening on to filter peers web transport addresses
-	ourLocalHostUDPPorts := make(map[string]bool, 2)
-	for _, a := range ourAddrs {
-		if !manet.IsIPLoopback(a) {
-			continue
-		}
-		if p, err := a.ValueForProtocol(ma.P_UDP); err == nil {
-			ourLocalHostUDPPorts[p] = true
-		}
-	}
+	// The order of these two filters is important. If we can only dial /webtransport,
+	// we don't want to filter /webtransport addresses out because the peer had a /quic-v1
+	// address
+
+	// filter addresses we cannot dial
+	addrs = ma.FilterAddrs(addrs, s.canDial)
+	// filter low priority addresses among the addresses we can dial
+	addrs = filterLowPriorityAddresses(addrs)
 
 	return ma.FilterAddrs(addrs,
 		func(addr ma.Multiaddr) bool { return !ma.Contains(ourAddrs, addr) },
-		func(addr ma.Multiaddr) bool { return checkLocalHostUDPAddrs(addr, ourLocalHostUDPPorts) },
-		s.canDial,
 		// TODO: Consider allowing link-local addresses
 		func(addr ma.Multiaddr) bool { return !manet.IsIP6LinkLocal(addr) },
 		func(addr ma.Multiaddr) bool {
@@ -559,15 +558,79 @@ func isRelayAddr(addr ma.Multiaddr) bool {
 	return err == nil
 }
 
-// checkLocalHostUDPAddrs returns false for addresses that have the same localhost port
-// as the one we are listening on
-// This is useful for filtering out peer's localhost webtransport addresses.
-func checkLocalHostUDPAddrs(addr ma.Multiaddr, ourUDPPorts map[string]bool) bool {
-	if !manet.IsIPLoopback(addr) {
-		return true
+// filterLowPriorityAddresses removes addresses inplace for which we have a better alternative
+//  1. If a /quic-v1 address is present, filter out /quic and /webtransport address on the same 2-tuple:
+//     QUIC v1 is preferred over the deprecated QUIC draft-29, and given the choice, we prefer using
+//     raw QUIC over using WebTransport.
+//  2. If a /tcp address is present, filter out /ws or /wss addresses on the same 2-tuple:
+//     We prefer using raw TCP over using WebSocket.
+func filterLowPriorityAddresses(addrs []ma.Multiaddr) []ma.Multiaddr {
+	// make a map of QUIC v1 and TCP AddrPorts.
+	quicV1Addr := make(map[netip.AddrPort]struct{})
+	tcpAddr := make(map[netip.AddrPort]struct{})
+	for _, a := range addrs {
+		switch {
+		case isProtocolAddr(a, ma.P_WEBTRANSPORT):
+		case isProtocolAddr(a, ma.P_QUIC_V1):
+			ap, err := addrPort(a, ma.P_UDP)
+			if err != nil {
+				continue
+			}
+			quicV1Addr[ap] = struct{}{}
+		case isProtocolAddr(a, ma.P_WS) || isProtocolAddr(a, ma.P_WSS):
+		case isProtocolAddr(a, ma.P_TCP):
+			ap, err := addrPort(a, ma.P_TCP)
+			if err != nil {
+				continue
+			}
+			tcpAddr[ap] = struct{}{}
+		}
 	}
-	if p, err := addr.ValueForProtocol(ma.P_UDP); err == nil {
-		return !ourUDPPorts[p]
+
+	i := 0
+	for _, a := range addrs {
+		switch {
+		case isProtocolAddr(a, ma.P_WEBTRANSPORT) || isProtocolAddr(a, ma.P_QUIC):
+			ap, err := addrPort(a, ma.P_UDP)
+			if err != nil {
+				break
+			}
+			if _, ok := quicV1Addr[ap]; ok {
+				continue
+			}
+		case isProtocolAddr(a, ma.P_WS) || isProtocolAddr(a, ma.P_WSS):
+			ap, err := addrPort(a, ma.P_TCP)
+			if err != nil {
+				break
+			}
+			if _, ok := tcpAddr[ap]; ok {
+				continue
+			}
+		}
+		addrs[i] = a
+		i++
 	}
-	return true
+	return addrs[:i]
+}
+
+// addrPort returns the ip and port for a. p should be either ma.P_TCP or ma.P_UDP.
+// a must be an (ip, TCP) or (ip, udp) address.
+func addrPort(a ma.Multiaddr, p int) (netip.AddrPort, error) {
+	ip, err := manet.ToIP(a)
+	if err != nil {
+		return netip.AddrPort{}, err
+	}
+	port, err := a.ValueForProtocol(p)
+	if err != nil {
+		return netip.AddrPort{}, err
+	}
+	pi, err := strconv.Atoi(port)
+	if err != nil {
+		return netip.AddrPort{}, err
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return netip.AddrPort{}, fmt.Errorf("failed to parse IP %s", ip)
+	}
+	return netip.AddrPortFrom(addr, uint16(pi)), nil
 }
