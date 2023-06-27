@@ -273,7 +273,5 @@ func (m *metricsTracer) UpdatedBlackHoleFilterState(name string, state blackHole
 
 	blackHoleFilterState.WithLabelValues(*tags...).Set(float64(state))
 	blackHoleFilterSuccessFraction.WithLabelValues(*tags...).Set(successFraction)
-	if state == blackHoleStateBlocked {
-		blackHoleFilterNextRequestAllowedAfter.WithLabelValues(*tags...).Set(float64(nextProbeAfter))
-	}
+	blackHoleFilterNextRequestAllowedAfter.WithLabelValues(*tags...).Set(float64(nextProbeAfter))
 }

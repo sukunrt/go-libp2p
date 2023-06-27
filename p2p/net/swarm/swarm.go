@@ -108,24 +108,6 @@ func WithDialRanker(d network.DialRanker) Option {
 	}
 }
 
-// WithNoIPv6BlackHoleDetection configures swarm to not do any black hole detection for
-// IPv6 addresses
-func WithNoIPv6BlackHoleDetection() Option {
-	return func(s *Swarm) error {
-		s.disableIPv6BlackHoleDetection = true
-		return nil
-	}
-}
-
-// WithNoUDPBlackHoleDetection configures swarm to not do any black hole detection for
-// UDP addresses
-func WithNoUDPBlackHoleDetection() Option {
-	return func(s *Swarm) error {
-		s.disableUDPBlackHoleDetection = true
-		return nil
-	}
-}
-
 // Swarm is a connection muxer, allowing connections to other peers to
 // be opened and closed, while still using the same Chan for all
 // communication. The Chan sends/receives Messages, which note the
@@ -192,9 +174,7 @@ type Swarm struct {
 
 	dialRanker network.DialRanker
 
-	disableIPv6BlackHoleDetection bool
-	disableUDPBlackHoleDetection  bool
-	bhd                           *blackHoleDetector
+	bhd *blackHoleDetector
 }
 
 // NewSwarm constructs a Swarm.
@@ -235,7 +215,7 @@ func NewSwarm(local peer.ID, peers peerstore.Peerstore, eventBus event.Bus, opts
 	s.limiter = newDialLimiter(s.dialAddr)
 	s.backf.init(s.ctx)
 
-	s.bhd = newBlackHoleDetector(!s.disableUDPBlackHoleDetection, !s.disableIPv6BlackHoleDetection, s.metricsTracer)
+	s.bhd = newBlackHoleDetector(true, true, s.metricsTracer)
 
 	return s, nil
 }

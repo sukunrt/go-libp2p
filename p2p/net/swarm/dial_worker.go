@@ -363,7 +363,11 @@ loop:
 				// we only add backoff if there has not been a successful connection
 				// for consistency with the old dialer behavior.
 				w.s.backf.AddBackoff(w.peer, res.Addr)
+			} else if res.Err == ErrDialRefusedBlackHole {
+				log.Errorf("SWARM BUG: unexpected ErrDialRefusedBlackHole while dialing peer %s to addr %s",
+					w.peer, res.Addr)
 			}
+
 			w.dispatchError(ad, res.Err)
 			// Only schedule next dial on error.
 			// If we scheduleNextDial on success, we will end up making one dial more than

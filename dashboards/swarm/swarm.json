@@ -3071,13 +3071,18 @@
             {
               "options": {
                 "0": {
-                  "color": "green",
+                  "color": "blue",
                   "index": 0,
-                  "text": "Allowed"
+                  "text": "Probing"
                 },
                 "1": {
-                  "color": "purple",
+                  "color": "green",
                   "index": 1,
+                  "text": "Allowed"
+                },
+                "2": {
+                  "color": "purple",
+                  "index": 2,
                   "text": "Blocked"
                 }
               },
@@ -3145,7 +3150,17 @@
             "fixedColor": "purple",
             "mode": "fixed"
           },
-          "mappings": [],
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "index": 0,
+                  "text": "-"
+                }
+              },
+              "type": "value"
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -3169,7 +3184,7 @@
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
-        "orientation": "auto",
+        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -3218,7 +3233,7 @@
               },
               {
                 "color": "green",
-                "value": 1
+                "value": 5
               }
             ]
           }
@@ -3302,6 +3317,6 @@
   "timezone": "",
   "title": "libp2p Swarm",
   "uid": "a15PyhO4z",
-  "version": 6,
+  "version": 7,
   "weekStart": ""
 }

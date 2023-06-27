@@ -340,10 +340,10 @@ func TestBlackHoledAddrBlocked(t *testing.T) {
 	defer s.Close()
 
 	n := 3
-	s.bhd.udp = &blackHoleFilter{n: n, minSuccessFraction: 0.5, name: "UDP"}
+	s.bhd.ipv6 = &blackHoleFilter{n: n, minSuccesses: 1, name: "IPv6"}
 
 	// all dials to the address will fail. RFC6666 Discard Prefix
-	addr := ma.StringCast("/ip6/0100::1/udp/54321/quic-v1")
+	addr := ma.StringCast("/ip6/0100::1/tcp/54321/")
 
 	p, err := test.RandPeerID()
 	if err != nil {
@@ -369,18 +369,7 @@ func TestBlackHoledAddrBlocked(t *testing.T) {
 	if conn != nil {
 		t.Fatalf("expected dial to be blocked")
 	}
-	dialError, ok := err.(*DialError)
-	if !ok {
-		t.Fatalf("expected to receive an error of type *DialError, got %T", err)
-	}
-	isBlackHoleErr := false
-	for _, err := range dialError.DialErrors {
-		if err.Cause == ErrDialRefusedBlackHole {
-			isBlackHoleErr = true
-			break
-		}
-	}
-	if !isBlackHoleErr {
-		t.Fatalf("expected to receive ErrDialRefusedBlackHole %s", err)
+	if err != ErrNoGoodAddresses {
+		t.Fatalf("expected to receive an error of type *DialError, got %s of type %T", err, err)
 	}
 }

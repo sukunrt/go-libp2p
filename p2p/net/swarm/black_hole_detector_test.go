@@ -1,171 +1,179 @@
 package swarm
 
 import (
+	"fmt"
 	"testing"
 
 	ma "github.com/multiformats/go-multiaddr"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBlackHoleFilterReset(t *testing.T) {
 	n := 10
-	bhd := &blackHoleFilter{n: n, minSuccessFraction: 0.05, name: "test"}
+	bhf := &blackHoleFilter{n: n, minSuccesses: 2, name: "test"}
 	var i = 0
-	// calls up to threshold should be allowed
+	// calls up to n should be probing
 	for i = 1; i <= n; i++ {
-		if _, isAllowed := bhd.IsAllowed(); !isAllowed {
-			t.Fatalf("expected calls up to minDials to be allowed")
+		if bhf.HandleRequest() != blackHoleResultProbing {
+			t.Fatalf("expected calls up to n to be probes")
 		}
-		bhd.RecordOutcome(false)
+		bhf.RecordResult(false)
 	}
-	// after threshold calls every nth call should be allowed
+
+	// after threshold calls every nth call should be a probe
 	for i = n + 1; i < 42; i++ {
-		_, isAllowed := bhd.IsAllowed()
-		if (i%n == 0 && !isAllowed) || (i%n != 0 && isAllowed) {
-			t.Fatalf("expected every nth dial to be allowed")
+		result := bhf.HandleRequest()
+		if (i%n == 0 && result != blackHoleResultProbing) || (i%n != 0 && result != blackHoleResultBlocked) {
+			t.Fatalf("expected every nth dial to be a probe")
 		}
 	}
 
-	bhd.RecordOutcome(true)
-	// check if calls up to threshold are allowed after success
+	bhf.RecordResult(true)
+	// check if calls up to n are probes again
 	for i = 0; i < n; i++ {
-		if _, isAllowed := bhd.IsAllowed(); !isAllowed {
+		if bhf.HandleRequest() != blackHoleResultProbing {
 			t.Fatalf("expected black hole detector state to reset after success")
 		}
-		bhd.RecordOutcome(false)
+		bhf.RecordResult(false)
 	}
 
-	// next call should be refused
-	if _, isAllowed := bhd.IsAllowed(); isAllowed {
+	// next call should be blocked
+	if bhf.HandleRequest() != blackHoleResultBlocked {
 		t.Fatalf("expected dial to be blocked")
 	}
 }
 
-func TestBlackHoleDetector(t *testing.T) {
+func TestBlackHoleFilterSuccessFraction(t *testing.T) {
 	n := 10
-	bhd := &blackHoleFilter{n: n, minSuccessFraction: 0.4, name: "test"}
-	var i = 0
-	// 5 success and 5 fails
-	for i = 1; i <= 5; i++ {
-		bhd.RecordOutcome(true)
+	tests := []struct {
+		minSuccesses, successes int
+		result                  blackHoleResult
+	}{
+		{minSuccesses: 5, successes: 5, result: blackHoleResultAllowed},
+		{minSuccesses: 3, successes: 3, result: blackHoleResultAllowed},
+		{minSuccesses: 5, successes: 4, result: blackHoleResultBlocked},
+		{minSuccesses: 5, successes: 7, result: blackHoleResultAllowed},
+		{minSuccesses: 3, successes: 1, result: blackHoleResultBlocked},
+		{minSuccesses: 0, successes: 0, result: blackHoleResultAllowed},
+		{minSuccesses: 10, successes: 10, result: blackHoleResultAllowed},
 	}
-	for i = 1; i <= 5; i++ {
-		bhd.RecordOutcome(false)
+	for i, tc := range tests {
+		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) {
+			bhf := blackHoleFilter{n: n, minSuccesses: tc.minSuccesses}
+			for i := 0; i < tc.successes; i++ {
+				bhf.RecordResult(true)
+			}
+			for i := 0; i < n-tc.successes; i++ {
+				bhf.RecordResult(false)
+			}
+			got := bhf.HandleRequest()
+			if got != tc.result {
+				t.Fatalf("expected %d got %d", tc.result, got)
+			}
+		})
 	}
-
-	if _, isAllowed := bhd.IsAllowed(); !isAllowed {
-		t.Fatalf("expected dial to be allowed")
-	}
-	// 4 success and 6 fails
-	bhd.RecordOutcome(false)
-
-	if _, isAllowed := bhd.IsAllowed(); !isAllowed {
-		t.Fatalf("expected dial to be allowed")
-	}
-	// 3 success and 7 fails
-	bhd.RecordOutcome(false)
-
-	// should be blocked
-	if _, isAllowed := bhd.IsAllowed(); isAllowed {
-		t.Fatalf("expected dial to be blocked")
-	}
-
-	bhd.RecordOutcome(true)
-	// 5 success and 5 fails
-	for i = 1; i <= 5; i++ {
-		bhd.RecordOutcome(true)
-	}
-	for i = 1; i <= 5; i++ {
-		bhd.RecordOutcome(false)
-	}
-
-	if _, isAllowed := bhd.IsAllowed(); !isAllowed {
-		t.Fatalf("expected dial to be allowed")
-	}
-	// 4 success and 6 fails
-	bhd.RecordOutcome(false)
-
-	if _, isAllowed := bhd.IsAllowed(); !isAllowed {
-		t.Fatalf("expected dial to be allowed")
-	}
-	// 3 success and 7 fails
-	bhd.RecordOutcome(false)
-
-	// should be blocked
-	if _, isAllowed := bhd.IsAllowed(); isAllowed {
-		t.Fatalf("expected dial to be blocked")
-	}
-
 }
 
 func TestBlackHoleDetectorInApplicableAddress(t *testing.T) {
 	bhd := newBlackHoleDetector(true, true, nil)
-	addr := ma.StringCast("/ip4/127.0.0.1/tcp/1234")
+	addrs := []ma.Multiaddr{
+		ma.StringCast("/ip4/1.2.3.4/tcp/1234"),
+		ma.StringCast("/ip4/1.2.3.4/tcp/1233"),
+		ma.StringCast("/ip6/::1/udp/1234/quic-v1"),
+		ma.StringCast("/ip4/192.168.1.5/udp/1234/quic-v1"),
+	}
 	for i := 0; i < 1000; i++ {
-		if !bhd.IsAllowed(addr) {
-			t.Fatalf("expect dials to inapplicable address to always be allowed")
+		filteredAddrs := bhd.FilterAddrs(addrs)
+		require.ElementsMatch(t, addrs, filteredAddrs)
+		for j := 0; j < len(addrs); j++ {
+			bhd.RecordResult(addrs[j], false)
 		}
-		bhd.RecordOutcome(addr, false)
 	}
 }
 
-func TestBlackHoleDetectorUDP(t *testing.T) {
-	bhd := newBlackHoleDetector(true, true, nil)
-	addr := ma.StringCast("/ip4/1.2.3.4/udp/1234")
+func TestBlackHoleDetectorUDPDisabled(t *testing.T) {
+	bhd := newBlackHoleDetector(false, true, nil)
+	publicAddr := ma.StringCast("/ip4/1.2.3.4/udp/1234/quic-v1")
+	privAddr := ma.StringCast("/ip4/192.168.1.5/udp/1234/quic-v1")
 	for i := 0; i < 100; i++ {
-		bhd.RecordOutcome(addr, false)
+		bhd.RecordResult(publicAddr, false)
 	}
-	if bhd.IsAllowed(addr) {
-		t.Fatalf("expect dial to be be blocked")
-	}
-
-	bhd = newBlackHoleDetector(false, true, nil)
-	for i := 0; i < 100; i++ {
-		bhd.RecordOutcome(addr, false)
-	}
-	if !bhd.IsAllowed(addr) {
-		t.Fatalf("expected dial to be be allowed when UDP detection is disabled")
-	}
+	addrs := []ma.Multiaddr{publicAddr, privAddr}
+	require.ElementsMatch(t, addrs, bhd.FilterAddrs(addrs))
 }
 
-func TestBlackHoleDetectorIPv6(t *testing.T) {
-	bhd := newBlackHoleDetector(true, true, nil)
-	addr := ma.StringCast("/ip6/1::1/tcp/1234")
+func TestBlackHoleDetectorIPv6Disabled(t *testing.T) {
+	bhd := newBlackHoleDetector(true, false, nil)
+	publicAddr := ma.StringCast("/ip6/1::1/tcp/1234")
+	privAddr := ma.StringCast("/ip6/::1/tcp/1234")
+	addrs := []ma.Multiaddr{publicAddr, privAddr}
 	for i := 0; i < 100; i++ {
-		bhd.RecordOutcome(addr, false)
+		bhd.RecordResult(publicAddr, false)
 	}
-	if bhd.IsAllowed(addr) {
-		t.Fatalf("expect dial to be be blocked")
-	}
-
-	bhd = newBlackHoleDetector(true, false, nil)
-	for i := 0; i < 100; i++ {
-		bhd.RecordOutcome(addr, false)
-	}
-	if !bhd.IsAllowed(addr) {
-		t.Fatalf("expected dial to be be allowed when IPv6 detection is disabled")
-	}
+	require.ElementsMatch(t, addrs, bhd.FilterAddrs(addrs))
 }
 
 func TestBlackHoleDetectorProbes(t *testing.T) {
 	bhd := &blackHoleDetector{
-		udp:  &blackHoleFilter{n: 2, minSuccessFraction: 0.5},
-		ipv6: &blackHoleFilter{n: 3, minSuccessFraction: 0.5},
+		udp:  &blackHoleFilter{n: 2, minSuccesses: 1, name: "udp"},
+		ipv6: &blackHoleFilter{n: 3, minSuccesses: 1, name: "ipv6"},
 	}
 	udp6Addr := ma.StringCast("/ip6/1::1/udp/1234/quic-v1")
+	addrs := []ma.Multiaddr{udp6Addr}
 	for i := 0; i < 3; i++ {
-		bhd.RecordOutcome(udp6Addr, false)
+		bhd.RecordResult(udp6Addr, false)
 	}
 	for i := 1; i < 100; i++ {
-		isAllowed := bhd.IsAllowed(udp6Addr)
+		filteredAddrs := bhd.FilterAddrs(addrs)
 		if i%2 == 0 || i%3 == 0 {
-			if !isAllowed {
+			if len(filteredAddrs) == 0 {
 				t.Fatalf("expected probe to be allowed irrespective of the state of other black hole filter")
 			}
 		} else {
-			if isAllowed {
-				t.Fatalf("expected dial to be blocked")
+			if len(filteredAddrs) != 0 {
+				t.Fatalf("expected dial to be blocked %s", filteredAddrs)
 			}
 		}
 	}
 
+}
+
+func TestBlackHoleDetectorAddrFiltering(t *testing.T) {
+	udp6Pub := ma.StringCast("/ip6/1::1/udp/1234/quic-v1")
+	udp6Pri := ma.StringCast("/ip6/::1/udp/1234/quic-v1")
+	upd4Pub := ma.StringCast("/ip4/1.2.3.4/udp/1234/quic-v1")
+	udp4Pri := ma.StringCast("/ip4/192.168.1.5/udp/1234/quic-v1")
+	tcp6Pub := ma.StringCast("/ip6/1::1/tcp/1234/quic-v1")
+	tcp6Pri := ma.StringCast("/ip6/::1/tcp/1234/quic-v1")
+	tcp4Pub := ma.StringCast("/ip4/1.2.3.4/tcp/1234/quic-v1")
+	tcp4Pri := ma.StringCast("/ip4/192.168.1.5/tcp/1234/quic-v1")
+
+	makeBHD := func(udpBlocked, ipv6Blocked bool) *blackHoleDetector {
+		bhd := &blackHoleDetector{
+			udp:  &blackHoleFilter{n: 100, minSuccesses: 10, name: "udp"},
+			ipv6: &blackHoleFilter{n: 100, minSuccesses: 10, name: "ipv6"},
+		}
+		for i := 0; i < 100; i++ {
+			bhd.RecordResult(upd4Pub, !udpBlocked)
+		}
+		for i := 0; i < 100; i++ {
+			bhd.RecordResult(tcp6Pub, !ipv6Blocked)
+		}
+		return bhd
+	}
+
+	allInput := []ma.Multiaddr{udp6Pub, udp6Pri, upd4Pub, udp4Pri, tcp6Pub, tcp6Pri,
+		tcp4Pub, tcp4Pri}
+
+	udpBlockedOutput := []ma.Multiaddr{udp6Pri, udp4Pri, tcp6Pub, tcp6Pri, tcp4Pub, tcp4Pri}
+	bhd := makeBHD(true, false)
+	require.ElementsMatch(t, udpBlockedOutput, bhd.FilterAddrs(allInput))
+
+	ip6BlockedOutput := []ma.Multiaddr{udp6Pri, upd4Pub, udp4Pri, tcp6Pri, tcp4Pub, tcp4Pri}
+	bhd = makeBHD(false, true)
+	require.ElementsMatch(t, ip6BlockedOutput, bhd.FilterAddrs(allInput))
+
+	bothBlockedOutput := []ma.Multiaddr{udp6Pri, udp4Pri, tcp6Pri, tcp4Pub, tcp4Pri}
+	bhd = makeBHD(true, true)
+	require.ElementsMatch(t, bothBlockedOutput, bhd.FilterAddrs(allInput))
 }
