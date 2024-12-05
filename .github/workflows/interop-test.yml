@@ -23,6 +23,11 @@ jobs:
     name: Run transport interoperability tests
     runs-on: ${{ fromJSON(vars['INTEROP_TEST_RUNNER_UBUNTU'] || '"ubuntu-22.04"') }}
     steps:
+      - name: Free Disk Space (Ubuntu)
+        if: vars['INTEROP_TEST_RUNNER_UBUNTU'] == ''
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build -t go-libp2p-head -f test-plans/PingDockerfile .
